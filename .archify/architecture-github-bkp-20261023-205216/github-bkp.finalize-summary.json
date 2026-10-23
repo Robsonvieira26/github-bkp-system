@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "C:\\Users\\robso\\Code\\github-bkp-system\\.archify\\architecture-github-bkp-20261023-205216\\candidate.json",
+    "sha256": "c24aecfe6d705723080115ddf303639869549531cae5c45e1798dd011dda5e77",
+    "bytes": 3501
+  },
+  "artifact": {
+    "path": "C:\\Users\\robso\\Code\\github-bkp-system\\.archify\\architecture-github-bkp-20261023-205216\\github-bkp.html",
+    "sha256": "75a1bbaa38541d396aee6005d98efc8b18219d4ceefc958d2359f7b16e9152d0",
+    "bytes": 826236
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [
+    {
+      "code": "i18n/locale-fallback",
+      "severity": "warning",
+      "message": "meta.locale \"pt-BR\" has no bundled catalog and no usable meta.translations; the Viewer chrome and <html lang> fall back to English.",
+      "subject": {
+        "diagramType": "architecture",
+        "path": "/meta/locale"
+      },
+      "evidence": {
+        "locale": "pt-BR",
+        "bundledLocales": [
+          "en",
+          "zh-CN",
+          "zh-TW",
+          "es",
+          "ko",
+          "ar"
+        ]
+      },
+      "supportedFixes": [
+        "Supply meta.translations for this locale.",
+        "Use a bundled locale: en, zh-CN, zh-TW, es, ko, ar."
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "C:\\Users\\robso\\Code\\github-bkp-system\\.archify\\architecture-github-bkp-20261023-205216\\github-bkp.finalize.json",
+    "summaryReceipt": "C:\\Users\\robso\\Code\\github-bkp-system\\.archify\\architecture-github-bkp-20261023-205216\\github-bkp.finalize-summary.json",
+    "browserCheckReceipt": "C:\\Users\\robso\\Code\\github-bkp-system\\.archify\\architecture-github-bkp-20261023-205216\\github-bkp.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-23T23:52:34.247Z",
+    "source": "network",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 9525,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}
