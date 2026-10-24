@@ -79,9 +79,22 @@ when the last run is older than 23 hours.
 
 ## Security
 
-The web UI has **no authentication**. The compose file binds it to `127.0.0.1` only.
-To reach it from other machines, change the port binding to a LAN or VPN address
-(e.g. your Tailscale IP) — never expose it to the internet.
+The web UI has **no authentication**. By default it is published on `127.0.0.1` only, so just the
+server itself can open it — never expose it to the internet.
+
+### Opening it from other PCs
+
+Set both in `.env`, then `docker compose up -d`:
+
+```dotenv
+BIND_ADDR=0.0.0.0            # or the server's LAN / Tailscale IP to listen on that interface only
+ALLOWED_HOSTS=127.0.0.1,localhost,192.168.0.10,marte   # the IP / hostname you type in the browser
+```
+
+`BIND_ADDR` alone isn't enough: a request whose host isn't in `ALLOWED_HOSTS` gets
+`400 Invalid host header`. Behind a reverse proxy (e.g. Nginx Proxy Manager) add the proxy's
+domain to `ALLOWED_HOSTS` instead, and keep `BIND_ADDR=127.0.0.1` if the proxy runs on the same
+host network. `HOST_PORT` (default `8808`) changes the published port.
 
 Two guards protect the UI from browser-based attacks: state-changing requests carrying a
 cross-site `Origin` / `Sec-Fetch-Site` header are rejected (403), and only the hostnames in
