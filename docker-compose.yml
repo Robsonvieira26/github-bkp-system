@@ -13,4 +13,9 @@ services:
     restart: unless-stopped
 
 volumes:
+  # External: compose never creates or deletes it, so `docker compose down -v`, image
+  # rebuilds and moving this folder can't lose the backups. Create it once:
+  #   docker volume create github-bkp-data
   bkp-data:
+    external: true
+    name: github-bkp-data

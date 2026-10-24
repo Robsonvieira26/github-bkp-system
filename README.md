@@ -19,13 +19,29 @@ and emails you when a repository disappears from GitHub (or comes back).
 1. Create a fine-grained GitHub token with **Contents: Read-only** and **Metadata: Read-only**
    for the repos you want to back up.
 2. `cp .env.example .env` and fill in the values.
-3. Start it:
+3. Create the data volume (once per server; see [Data](#data)):
+
+   ```bash
+   docker volume create github-bkp-data
+   ```
+
+4. Start it:
 
    ```bash
    docker compose up -d --build
    ```
 
-4. Open http://127.0.0.1:8808 and add repos as `owner/repo` or a GitHub URL.
+5. Open http://127.0.0.1:8808 and add repos as `owner/repo` or a GitHub URL.
+
+## Updating
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+Rebuilding the image, restarting, `docker compose down` and even `docker compose down -v` keep
+all backups: they live in the external `github-bkp-data` volume, which compose never removes.
 
 ## API
 
@@ -78,12 +94,30 @@ written to the mirrors' `config` files.
 
 ## Data
 
-Everything lives in the `bkp-data` volume mounted at `/data`:
+Everything lives in the `github-bkp-data` Docker volume mounted at `/data`:
 
 - `/data/state.db` — SQLite with repos, runs and events
 - `/data/repos/<owner>/<repo>.git` — mirrors (never deleted by the service)
 
-If you use a bind mount instead of the named volume, make the host directory writable by UID 1000.
+The volume is declared `external`, so compose never creates or deletes it, and its name doesn't
+depend on the folder the project is in. If it doesn't exist, `docker compose up` stops with
+`external volume "github-bkp-data" not found`; create it with `docker volume create github-bkp-data`.
+Only `docker volume rm github-bkp-data` deletes the backups.
+
+**Upgrading from a version before the external volume** (data in `github-bkp-system_bkp-data`):
+copy it once into the new volume, then start as usual. The old volume is left untouched; remove it
+yourself with `docker volume rm github-bkp-system_bkp-data` after checking the new one.
+
+```bash
+docker compose down
+docker volume create github-bkp-data
+docker run --rm --user 0 --entrypoint sh \
+  -v github-bkp-system_bkp-data:/from:ro -v github-bkp-data:/to \
+  github-bkp-system:latest -c 'cp -a /from/. /to/'
+docker compose up -d --build
+```
+
+If you use a bind mount instead of the volume, make the host directory writable by UID 1000.
 
 ## Restore
 
