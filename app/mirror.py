@@ -142,7 +142,10 @@ def ensure_mirror(path: Path, url: str, token: str | None) -> bool:
     """Clone a bare mirror if missing. Returns True when a new clone was created."""
     if (path / "HEAD").exists():
         return False
-    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise GitError(f"não foi possível criar {path.parent}: {exc.strerror}") from exc
     # Build the mirror in a sibling dir and move it into place only when fully configured.
     # A clone left half-configured (default +refs/*:refs/*, mirror=true) would look ready
     # by HEAD alone, and its next `fetch --prune` would delete refs/backup/*.

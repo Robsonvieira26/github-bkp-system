@@ -27,9 +27,26 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(data, ensure_ascii=False)
 
 
+def check_data_dir(settings: Settings) -> None:
+    """Fail at startup, with the fix, if mirrors can't be written (every backup would fail)."""
+    try:
+        settings.repos_dir.mkdir(parents=True, exist_ok=True)
+        probe = settings.repos_dir / ".write-test"
+        probe.write_text("ok")
+        probe.unlink()
+    except OSError as exc:
+        raise RuntimeError(
+            f"sem permissão para gravar em {settings.repos_dir} ({exc.strerror}). O container "
+            f"roda como UID 1000; corrija o dono do volume com: docker run --rm --user 0 "
+            f"-v github-bkp-data:/data --entrypoint chown github-bkp-system:latest "
+            f"-R 1000:1000 /data"
+        ) from exc
+
+
 def build(settings: Settings) -> tuple[FastAPI, Scheduler]:
     if shutil.which("git") is None:
         raise RuntimeError("git não encontrado no PATH")
+    check_data_dir(settings)
     db = Database(settings.db_path)
     token = settings.github_token.get_secret_value()
     job = BackupJob(

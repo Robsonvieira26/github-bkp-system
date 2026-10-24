@@ -212,3 +212,16 @@ def test_db_error_on_one_repo_does_not_abort_run(env, monkeypatch):
     run = env.db.last_run()
     assert run.finished_at is not None
     assert (run.ok_count, run.fail_count) == (1, 1)
+
+
+def test_unexpected_error_message_includes_reason(env, monkeypatch):
+    r = env.db.add_repo("owner/repo")
+
+    def boom(name):
+        raise PermissionError(13, "Permission denied", "/data/repos/owner")
+
+    monkeypatch.setattr(env.gh, "check_repo", boom)
+    env.job.run("schedule")
+    assert env.db.get_repo(r.id).last_error == (
+        "erro inesperado: PermissionError: [Errno 13] Permission denied: '/data/repos/owner'"
+    )

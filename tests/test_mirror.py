@@ -314,3 +314,12 @@ def test_same_sha_vanishing_twice_keeps_one_backup(remote, mirror_dir):
         remote.push("--delete", "tmp")
         sync_mirror(mirror_dir, None, TODAY)
     assert _backup_refs(mirror_dir) == {f"refs/backup/{TODAY}/heads/tmp": sha}
+
+
+def test_ensure_mirror_unwritable_parent_is_git_error(remote, mirror_dir, monkeypatch):
+    def deny(self, *args, **kwargs):
+        raise PermissionError(13, "Permission denied", str(self))
+
+    monkeypatch.setattr(Path, "mkdir", deny)
+    with pytest.raises(GitError, match="não foi possível criar .*Permission denied"):
+        ensure_mirror(mirror_dir, remote.url, None)

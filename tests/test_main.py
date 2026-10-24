@@ -53,3 +53,22 @@ def test_build_rejects_untrusted_host(make_settings):
     client = TestClient(build(make_settings())[0])
     assert client.get("/health", headers={"Host": "evil.example"}).status_code == 400
     assert client.get("/health", headers={"Host": "127.0.0.1:8080"}).status_code == 200
+
+
+def test_build_fails_clearly_when_data_dir_not_writable(make_settings, monkeypatch):
+    from pathlib import Path
+
+    import pytest
+
+    settings = make_settings()
+    real_mkdir = Path.mkdir
+
+    def deny_repos(self, *args, **kwargs):
+        if self == settings.repos_dir:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", deny_repos)
+    fix = "--entrypoint chown github-bkp-system:latest -R 1000:1000 /data"
+    with pytest.raises(RuntimeError, match=fix):
+        build(settings)
