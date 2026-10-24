@@ -48,9 +48,7 @@ def next_state(current: RepoState, outcome: Outcome) -> Transition:
 
     errors = current.consecutive_err + 1
     if current.status in (Status.MISSING, Status.SUSPECT):
-        return Transition(
-            RepoState(current.status, current.consecutive_404, errors), ("error",)
-        )
+        return Transition(RepoState(current.status, current.consecutive_404, errors), ("error",))
     events: tuple[str, ...] = ("error",)
     if errors == ERROR_ALERT_THRESHOLD:
         events += ("backup_failing",)

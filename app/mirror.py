@@ -64,8 +64,9 @@ def _run(
     )
 
 
-def _git(args: list[str], cwd: Path | None = None, token: str | None = None,
-         input: str | None = None) -> str:
+def _git(
+    args: list[str], cwd: Path | None = None, token: str | None = None, input: str | None = None
+) -> str:
     proc = _run(args, cwd=cwd, token=token, input=input)
     if proc.returncode != 0:
         # The message ends up in the DB and in emails: never let the token leak there.
@@ -88,8 +89,9 @@ def _list_refs(path: Path, *prefixes: str) -> dict[str, str]:
 def _delete_refs(path: Path, prefix: str) -> None:
     refs = _list_refs(path, prefix)
     if refs:
-        _git(["update-ref", "--stdin"], cwd=path,
-             input="".join(f"delete {name}\n" for name in refs))
+        _git(
+            ["update-ref", "--stdin"], cwd=path, input="".join(f"delete {name}\n" for name in refs)
+        )
 
 
 def _is_ancestor(path: Path, old: str, new: str) -> bool:
@@ -110,7 +112,7 @@ def _unique_ref(base: str, existing: set[str]) -> str:
     # If a parent path of base is itself a ref, suffixing the leaf can never resolve the
     # conflict, so the suffix goes on that component instead (heads/foo-2/bar).
     ancestor = next((e for e in existing if base.startswith(e + "/")), None)
-    head, rest = (ancestor, base[len(ancestor):]) if ancestor else (base, "")
+    head, rest = (ancestor, base[len(ancestor) :]) if ancestor else (base, "")
     candidate = base
     n = 1
     while _ref_taken(candidate, existing):
@@ -176,8 +178,7 @@ def _preserve_vanishing_refs(path: Path, today: str) -> list[str]:
         # Already saved today (e.g. a retry after the apply step failed): don't pile up
         # copies. Still reported, since the failed run never got to report it.
         already = any(
-            b_sha == sha and _is_variant(b_name, base)
-            for b_name, b_sha in existing_backups.items()
+            b_sha == sha and _is_variant(b_name, base) for b_name, b_sha in existing_backups.items()
         )
         if not already:
             target = _unique_ref(base, set(existing_backups))

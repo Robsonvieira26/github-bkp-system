@@ -5,17 +5,42 @@ from app.notifier import EmailMessage, Notifier, render_events_email, render_sum
 from app.state import Status
 
 
-def ev(kind, name="owner/repo", detail=None, last_success="2026-10-20T03:00:00+00:00",
-       last_error=None, id=1):
-    return Event(id=id, repo_id=1, run_id=1, kind=kind, detail=detail,
-                 created_at="2026-10-23T03:00:00+00:00", emailed=False, full_name=name,
-                 last_success_at=last_success, last_error=last_error)
+def ev(
+    kind,
+    name="owner/repo",
+    detail=None,
+    last_success="2026-10-20T03:00:00+00:00",
+    last_error=None,
+    id=1,
+):
+    return Event(
+        id=id,
+        repo_id=1,
+        run_id=1,
+        kind=kind,
+        detail=detail,
+        created_at="2026-10-23T03:00:00+00:00",
+        emailed=False,
+        full_name=name,
+        last_success_at=last_success,
+        last_error=last_error,
+    )
 
 
 def repo(name, status=Status.ACTIVE, size=2048):
-    return Repo(id=1, full_name=name, status=status, consecutive_404=0, consecutive_err=0,
-                last_success_at="2026-10-23T03:00:00+00:00", last_checked_at=None,
-                last_error=None, size_bytes=size, enabled=True, created_at="x")
+    return Repo(
+        id=1,
+        full_name=name,
+        status=status,
+        consecutive_404=0,
+        consecutive_err=0,
+        last_success_at="2026-10-23T03:00:00+00:00",
+        last_checked_at=None,
+        last_error=None,
+        size_bytes=size,
+        enabled=True,
+        created_at="x",
+    )
 
 
 def make_fake_smtp():
@@ -100,8 +125,11 @@ def test_send_starttls(make_settings):
 def test_send_ssl(make_settings):
     plain, plain_created = make_fake_smtp()
     ssl_cls, ssl_created = make_fake_smtp()
-    n = Notifier(make_settings(smtp_port=465, smtp_starttls=False),
-                 smtp_factory=plain, smtp_ssl_factory=ssl_cls)
+    n = Notifier(
+        make_settings(smtp_port=465, smtp_starttls=False),
+        smtp_factory=plain,
+        smtp_ssl_factory=ssl_cls,
+    )
     n.send(EmailMessage("Hi", "text", "<p>html</p>"))
     assert plain_created == []
     assert ssl_created[0].calls == [("login", "user", "pass")]

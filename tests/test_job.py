@@ -47,10 +47,12 @@ def env(tmp_path, remote):
     db = Database(tmp_path / "state.db")
     gh, nt, clock = FakeGitHub(), FakeNotifier(), Clock()
     repos_dir = tmp_path / "repos"
-    job = BackupJob(db, gh, nt, repos_dir=repos_dir, git_base_url=remote.base_url,
-                    token=None, now=clock)
-    yield SimpleNamespace(db=db, gh=gh, nt=nt, clock=clock, job=job, remote=remote,
-                          repos_dir=repos_dir)
+    job = BackupJob(
+        db, gh, nt, repos_dir=repos_dir, git_base_url=remote.base_url, token=None, now=clock
+    )
+    yield SimpleNamespace(
+        db=db, gh=gh, nt=nt, clock=clock, job=job, remote=remote, repos_dir=repos_dir
+    )
     db.close()
 
 

@@ -1,8 +1,14 @@
 import subprocess
 from pathlib import Path
 
-_IDENTITY = ["-c", "user.name=Test", "-c", "user.email=test@example.com",
-             "-c", "init.defaultBranch=main"]
+_IDENTITY = [
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.com",
+    "-c",
+    "init.defaultBranch=main",
+]
 
 
 def git(*args: str, cwd: Path) -> str:

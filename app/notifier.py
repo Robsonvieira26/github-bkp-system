@@ -85,8 +85,9 @@ def render_summary_email(repos: list[Repo], events: list[Event]) -> EmailMessage
 
 
 class Notifier:
-    def __init__(self, settings: Settings, smtp_factory=smtplib.SMTP,
-                 smtp_ssl_factory=smtplib.SMTP_SSL):
+    def __init__(
+        self, settings: Settings, smtp_factory=smtplib.SMTP, smtp_ssl_factory=smtplib.SMTP_SSL
+    ):
         self._settings = settings
         self._smtp = smtp_factory
         self._smtp_ssl = smtp_ssl_factory

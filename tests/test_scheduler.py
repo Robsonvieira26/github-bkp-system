@@ -1,5 +1,5 @@
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -114,3 +114,54 @@ def test_day_of_week_list_and_names():
 def test_cron_trigger_invalid_raises_value_error(expr):
     with pytest.raises(ValueError):
         cron_trigger(expr, "UTC")
+
+
+NOW = datetime(2026, 10, 23, 12, 0, tzinfo=UTC)
+
+
+def make_catchup(job, last):
+    return Scheduler(
+        job,
+        sync_cron="0 3 * * *",
+        summary_cron="0 9 * * 0",
+        tz="UTC",
+        last_run_started=lambda: last,
+        now=lambda: NOW,
+    )
+
+
+def _wait_idle(s):
+    for _ in range(100):
+        if not s.is_running():
+            return
+        threading.Event().wait(0.05)
+
+
+@pytest.mark.parametrize("last", [None, (NOW - timedelta(hours=24)).isoformat()])
+def test_start_catches_up_when_last_run_is_stale(last):
+    job = BlockingJob()
+    job.release.set()
+    s = make_catchup(job, last)
+    s.start()
+    try:
+        assert job.finished.wait(5)
+        assert job.triggers == ["startup"]
+    finally:
+        s.shutdown()
+        _wait_idle(s)
+
+
+def test_start_skips_catch_up_when_last_run_is_recent():
+    job = BlockingJob()
+    s = make_catchup(job, (NOW - timedelta(hours=2)).isoformat())
+    s.start()
+    try:
+        assert s.is_running() is False
+        assert job.triggers == []
+    finally:
+        s.shutdown()
+
+
+def test_jobs_have_misfire_grace_time():
+    s = make(BlockingJob())
+    assert {j.misfire_grace_time for j in s.jobs()} == {3600}

@@ -244,8 +244,7 @@ class Database:
         self, repo_id: int | None, run_id: int | None, kind: str, detail: str | None, now: str
     ) -> int:
         cur = self._write(
-            "INSERT INTO events (repo_id, run_id, kind, detail, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO events (repo_id, run_id, kind, detail, created_at) VALUES (?, ?, ?, ?, ?)",
             (repo_id, run_id, kind, detail, now),
         )
         return cur.lastrowid
