@@ -27,6 +27,32 @@ and emails you when a repository disappears from GitHub (or comes back).
 
 4. Open http://127.0.0.1:8808 and add repos as `owner/repo` or a GitHub URL.
 
+## API
+
+Add repositories from a script with `POST /api/repos`. It accepts the same formats as the form
+(`owner/repo`, HTTPS or SSH GitHub URL), 1–100 per request:
+
+```bash
+curl -X POST http://127.0.0.1:8808/api/repos \
+  -H "Content-Type: application/json" \
+  -d '{"repos": ["octocat/Hello-World", "https://github.com/owner/repo"]}'
+```
+
+The response has one result per input, in order. `status` is `added`, `duplicate` (already in
+the list) or `invalid` (not a GitHub repo name); the HTTP status is `201` when at least one repo
+was added, otherwise `200`. A malformed body returns `422`.
+
+```json
+{"results": [
+  {"input": "octocat/Hello-World", "full_name": "octocat/hello-world", "status": "added"},
+  {"input": "https://github.com/owner/repo", "full_name": "owner/repo", "status": "duplicate"}
+]}
+```
+
+New repos are backed up on the next scheduled run, or right away with "Sincronizar agora".
+Like the UI, the API has no authentication (see Security) and requests sent from a browser on
+another site are rejected.
+
 ## Schedule
 
 `SYNC_CRON` and `SUMMARY_CRON` use standard cron syntax (day-of-week `0` or `7` = Sunday),

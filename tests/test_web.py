@@ -243,3 +243,47 @@ def test_site_uses_archify_theme_choice(ctx):
     html = client.get("/").text
     assert 'localStorage.getItem("archify-theme")' in html
     assert ':root[data-theme="light"]' in html
+
+
+def test_api_add_repos(ctx):
+    db, _, client = ctx
+    db.add_repo("owner/existing")
+    resp = client.post("/api/repos", json={"repos": [
+        "owner/new", "https://github.com/Owner/Other.git", "owner/existing", "not a repo",
+        "owner/new",
+    ]})
+    assert resp.status_code == 201
+    assert resp.json() == {"results": [
+        {"input": "owner/new", "full_name": "owner/new", "status": "added"},
+        {"input": "https://github.com/Owner/Other.git", "full_name": "owner/other",
+         "status": "added"},
+        {"input": "owner/existing", "full_name": "owner/existing", "status": "duplicate"},
+        {"input": "not a repo", "full_name": None, "status": "invalid"},
+        {"input": "owner/new", "full_name": "owner/new", "status": "duplicate"},
+    ]}
+    assert [r.full_name for r in db.list_repos()] == ["owner/existing", "owner/new", "owner/other"]
+
+
+def test_api_add_repos_nothing_added_is_200(ctx):
+    db, _, client = ctx
+    db.add_repo("owner/repo")
+    resp = client.post("/api/repos", json={"repos": ["owner/repo"]})
+    assert resp.status_code == 200
+    assert resp.json()["results"][0]["status"] == "duplicate"
+
+
+@pytest.mark.parametrize(
+    "body", [{}, {"repos": []}, {"repos": "owner/repo"}, {"repos": ["a/b"] * 101}, [1, 2]]
+)
+def test_api_add_repos_rejects_bad_body(ctx, body):
+    db, _, client = ctx
+    assert client.post("/api/repos", json=body).status_code == 422
+    assert db.list_repos() == []
+
+
+def test_api_add_repos_blocked_cross_site(ctx):
+    db, _, client = ctx
+    resp = client.post("/api/repos", json={"repos": ["a/b"]},
+                       headers={"Origin": "http://evil.example"})
+    assert resp.status_code == 403
+    assert db.list_repos() == []
