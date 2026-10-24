@@ -48,7 +48,7 @@ def build(settings: Settings) -> tuple[FastAPI, Scheduler]:
         tz=settings.tz,
         last_run_started=lambda: (r.started_at if (r := db.last_run()) else None),
     )
-    return create_app(db, scheduler, settings.allowed_hosts_list), scheduler
+    return create_app(db, scheduler, settings.allowed_hosts_list, tz=settings.tz), scheduler
 
 
 def main() -> None:

@@ -1,32 +1,76 @@
 {% extends "base.html" %}
+{% set active = "runs" %}
+{% block title %}Execuções{% endblock %}
+
+{% block style %}
+    .runs {
+      list-style: none; margin: 8px 0 0; padding: 0 20px;
+      background: var(--surface); border: 1px solid var(--rule); border-radius: 12px;
+      backdrop-filter: blur(6px);
+    }
+    .run { border-top: 1px solid var(--rule); }
+    .run:first-child { border-top: 0; }
+    .run-row {
+      display: grid; grid-template-columns: 11rem 7rem minmax(0, 1fr) auto;
+      gap: 16px; align-items: baseline; padding: 14px 0;
+    }
+    .run-when { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .run-trigger { color: var(--muted); }
+    .run-result { font-variant-numeric: tabular-nums; }
+    .run-result .fail { color: var(--warn); font-weight: 600; }
+    .run-result .aborted { color: var(--bad); font-weight: 600; }
+    details { padding: 0 0 14px; }
+    summary { cursor: pointer; color: var(--accent); width: fit-content; }
+    details ul { list-style: none; margin: 10px 0 0; padding: 0 0 0 14px; border-left: 2px solid var(--rule); }
+    details li { padding: 3px 0; overflow-wrap: anywhere; }
+    .kind-missing, .kind-not_found { color: var(--bad); }
+    .kind-error, .kind-backup_failing { color: var(--warn); }
+    .kind-restored, .kind-synced { color: var(--ok); }
+    .detail { color: var(--muted); }
+    @media (max-width: 760px) {
+      .shell { padding: 0 16px 48px; }
+      .runs { padding: 0 14px; }
+      .run-row { grid-template-columns: 1fr auto; row-gap: 2px; }
+      .run-result { grid-column: 1 / -1; }
+    }
+{% endblock %}
+
 {% block content %}
 <h1>Execuções</h1>
-<table>
-  <thead><tr><th>#</th><th>Início</th><th>Fim</th><th>Origem</th><th>OK</th><th>Falhas</th></tr></thead>
-  <tbody>
+<p class="lede">As últimas 50 rodadas de backup, da mais recente para a mais antiga.</p>
+
+{% if runs %}
+<ul class="runs">
   {% for run in runs %}
-    <tr>
-      <td>{{ run.id }}</td>
-      <td>{{ run.started_at }}</td>
-      <td>{% if run.aborted %}interrompida{% else %}{{ run.finished_at or "em execução" }}{% endif %}</td>
-      <td>{{ run.trigger }}</td>
-      <td>{{ run.ok_count }}</td>
-      <td>{{ run.fail_count }}</td>
-    </tr>
-    {% if events[run.id] %}
-    <tr><td></td><td colspan="5">
-      <details><summary class="muted">{{ events[run.id] | length }} evento(s)</summary>
-        <ul>
-        {% for e in events[run.id] %}
-          <li>{{ e.full_name or "-" }} — <strong>{{ e.kind }}</strong>{% if e.detail %}: {{ e.detail }}{% endif %}</li>
+  {% set evs = events[run.id] %}
+  <li class="run">
+    <div class="run-row">
+      <span class="run-when">{{ run.started_at | when }}</span>
+      <span class="run-trigger" data-trigger="{{ run.trigger }}">{{ trigger_labels.get(run.trigger, run.trigger) }}</span>
+      <span class="run-result">
+        {% if run.aborted %}
+          <span class="aborted">Rodada interrompida</span> antes de terminar.
+        {% elif not run.finished_at %}
+          Em execução…
+        {% else %}
+          {{ run.ok_count }} ok{% if run.fail_count %}, <span class="fail">{{ run.fail_count }} com problema</span>{% endif %}.
+        {% endif %}
+      </span>
+    </div>
+    {% if evs %}
+    <details>
+      <summary>{{ evs | length }} {{ "evento" if evs | length == 1 else "eventos" }}</summary>
+      <ul>
+        {% for e in evs %}
+        <li><span class="mono">{{ e.full_name or "-" }}</span>: <span class="kind-{{ e.kind }}" data-kind="{{ e.kind }}">{{ event_labels.get(e.kind, e.kind) }}</span>{% if e.detail %} <span class="detail">({{ e.detail }})</span>{% endif %}</li>
         {% endfor %}
-        </ul>
-      </details>
-    </td></tr>
+      </ul>
+    </details>
     {% endif %}
-  {% else %}
-    <tr><td colspan="6" class="muted">Nenhuma execução ainda.</td></tr>
+  </li>
   {% endfor %}
-  </tbody>
-</table>
+</ul>
+{% else %}
+<p class="muted">Nenhuma execução ainda. A primeira roda no próximo horário agendado, ou agora pelo botão "Sincronizar agora" na página de repositórios.</p>
+{% endif %}
 {% endblock %}
