@@ -7,13 +7,14 @@
       display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch;
       padding: 16px; margin-bottom: 12px;
       background: var(--surface); border: 1px solid var(--rule); border-radius: 12px;
+      backdrop-filter: blur(6px);
     }
     .add { display: flex; flex-wrap: wrap; flex: 1 1 420px; gap: 8px; }
     .add input {
       flex: 1 1 14rem; min-width: 0;
       font: 15px var(--mono); letter-spacing: -0.01em;
       padding: 10px 12px; border-radius: 8px;
-      border: 1px solid var(--rule); background: var(--paper); color: var(--ink);
+      border: 1px solid var(--rule); background: var(--field); color: var(--ink);
     }
     .add input::placeholder { color: var(--muted); font-family: var(--sans); }
     .sync { margin-left: auto; }
@@ -24,7 +25,11 @@
     }
     .notice.warn { border-left-color: var(--warn); }
 
-    .repos { list-style: none; margin: 28px 0 0; padding: 0; }
+    .repos {
+      list-style: none; margin: 28px 0 0; padding: 0 20px;
+      background: var(--surface); border: 1px solid var(--rule); border-radius: 12px;
+      backdrop-filter: blur(6px);
+    }
     .repo {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto 5rem;
@@ -32,7 +37,7 @@
       column-gap: 28px; row-gap: 6px; align-items: start;
       padding: 18px 0; border-top: 1px solid var(--rule);
     }
-    .repo:last-child { border-bottom: 1px solid var(--rule); }
+    .repo:first-child { border-top: 0; }
     .repo-name { grid-area: name; font-weight: 600; overflow-wrap: anywhere; }
     .repo-name a { color: var(--ink); text-decoration: none; }
     .repo-name a:hover { text-decoration: underline; }
@@ -63,7 +68,7 @@
     .legend span { display: inline-flex; align-items: center; gap: 6px; }
     .legend .cell { width: 7px; height: 12px; animation: none; }
 
-    .empty { padding: 40px 0; border-top: 1px solid var(--rule); color: var(--muted); max-width: 52ch; }
+    .empty { padding: 32px 0 0; color: var(--muted); max-width: 52ch; }
     .empty strong { color: var(--ink); }
 
     @media (max-width: 760px) {
@@ -72,6 +77,7 @@
       .add { flex-basis: 100%; }
       .add button, .sync, .sync button { width: 100%; }
       .sync { margin-left: 0; }
+      .repos { padding: 0 14px; }
       .repo {
         grid-template-columns: minmax(0, 1fr) auto;
         grid-template-areas: "name remove" "status status" "strip strip" "detail detail" "size size";

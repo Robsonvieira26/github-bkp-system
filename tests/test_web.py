@@ -233,3 +233,13 @@ def test_architecture_tab(ctx):
     assert page.headers["content-type"].startswith("text/html")
     assert "GitHub Backup System" in page.text
     assert "<iframe" not in page.text
+    assert page.text.count('class="bkp-nav"') == 1
+    assert '<a href="/">Repositórios</a>' in page.text
+    assert '<a href="/arquitetura" aria-current="page">Arquitetura</a>' in page.text
+
+
+def test_site_uses_archify_theme_choice(ctx):
+    _, _, client = ctx
+    html = client.get("/").text
+    assert 'localStorage.getItem("archify-theme")' in html
+    assert ':root[data-theme="light"]' in html
