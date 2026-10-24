@@ -6,7 +6,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from app.config import Settings
-from app.db import Database
+from app.db import Database, utc_now
 from app.github_client import GitHubClient
 from app.job import BackupJob
 from app.notifier import Notifier
@@ -40,6 +40,7 @@ def build(settings: Settings) -> tuple[FastAPI, Scheduler]:
         git_base_url=settings.github_git_url,
         token=token,
     )
+    db.close_unfinished_runs(utc_now())
     scheduler = Scheduler(
         job,
         sync_cron=settings.sync_cron,
@@ -47,7 +48,7 @@ def build(settings: Settings) -> tuple[FastAPI, Scheduler]:
         tz=settings.tz,
         last_run_started=lambda: (r.started_at if (r := db.last_run()) else None),
     )
-    return create_app(db, scheduler), scheduler
+    return create_app(db, scheduler, settings.allowed_hosts_list), scheduler
 
 
 def main() -> None:
