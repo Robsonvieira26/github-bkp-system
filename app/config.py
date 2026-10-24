@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("/data")
     github_api_url: str = "https://api.github.com"
     github_git_url: str = "https://github.com"
+    allowed_hosts: str = "127.0.0.1,localhost"
 
     @field_validator("mail_to")
     @classmethod
@@ -32,6 +33,10 @@ class Settings(BaseSettings):
     @property
     def mail_to_list(self) -> list[str]:
         return [addr.strip() for addr in self.mail_to.split(",") if addr.strip()]
+
+    @property
+    def allowed_hosts_list(self) -> list[str]:
+        return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
 
     @property
     def db_path(self) -> Path:

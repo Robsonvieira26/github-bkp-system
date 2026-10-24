@@ -28,7 +28,8 @@
       <td class="muted">{{ r.last_error or "" }}</td>
       <td>
         <form class="inline" method="post" action="/repos/{{ r.id }}/delete"
-              onsubmit="return confirm('Remover {{ r.full_name }} da lista? A cópia local é mantida.')">
+              data-name="{{ r.full_name }}"
+              onsubmit="return confirm('Remover ' + this.dataset.name + ' da lista? A cópia local é mantida.')">
           <button type="submit">Remover</button>
         </form>
       </td>
