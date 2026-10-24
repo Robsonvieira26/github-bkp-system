@@ -1,5 +1,7 @@
 import pytest
 
+from tests.gitutil import RemoteRepo
+
 
 @pytest.fixture
 def make_settings(tmp_path):
@@ -19,3 +21,8 @@ def make_settings(tmp_path):
         return Settings(**values)
 
     return factory
+
+
+@pytest.fixture
+def remote(tmp_path):
+    return RemoteRepo(tmp_path / "remote")
