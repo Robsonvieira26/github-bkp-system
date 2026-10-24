@@ -55,10 +55,8 @@ def test_build_rejects_untrusted_host(make_settings):
     assert client.get("/health", headers={"Host": "127.0.0.1:8080"}).status_code == 200
 
 
-def test_build_fails_clearly_when_data_dir_not_writable(make_settings, monkeypatch):
+def test_unwritable_data_dir_keeps_ui_up_and_reports_fix(make_settings, monkeypatch):
     from pathlib import Path
-
-    import pytest
 
     settings = make_settings()
     real_mkdir = Path.mkdir
@@ -69,6 +67,18 @@ def test_build_fails_clearly_when_data_dir_not_writable(make_settings, monkeypat
         return real_mkdir(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "mkdir", deny_repos)
+    app, _ = build(settings)  # must not raise: the UI stays reachable
+    client = TestClient(app, base_url="http://127.0.0.1")
     fix = "--entrypoint chown github-bkp-system:latest -R 1000:1000 /data"
-    with pytest.raises(RuntimeError, match=fix):
-        build(settings)
+    html = client.get("/").text
+    assert "Sem permissão para gravar" in html and fix in html
+    health = client.get("/health").json()
+    assert health["ok"] is True
+    assert "Permission denied" in health["problem"] and fix in health["problem"]
+
+
+def test_writable_data_dir_has_no_problem(make_settings):
+    app, _ = build(make_settings())
+    client = TestClient(app, base_url="http://127.0.0.1")
+    assert "problem" not in client.get("/health").json()
+    assert "Sem permissão para gravar" not in client.get("/").text

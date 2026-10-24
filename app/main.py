@@ -13,6 +13,8 @@ from app.notifier import Notifier
 from app.scheduler import Scheduler
 from app.web import create_app
 
+log = logging.getLogger(__name__)
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -27,26 +29,32 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(data, ensure_ascii=False)
 
 
-def check_data_dir(settings: Settings) -> None:
-    """Fail at startup, with the fix, if mirrors can't be written (every backup would fail)."""
+def check_data_dir(settings: Settings) -> str | None:
+    """Why mirrors can't be written (every backup would fail), with the fix; None if fine.
+
+    Reported in the UI and /health instead of stopping the service, so the page stays up.
+    """
     try:
         settings.repos_dir.mkdir(parents=True, exist_ok=True)
         probe = settings.repos_dir / ".write-test"
         probe.write_text("ok")
         probe.unlink()
     except OSError as exc:
-        raise RuntimeError(
-            f"sem permissão para gravar em {settings.repos_dir} ({exc.strerror}). O container "
+        return (
+            f"Sem permissão para gravar em {settings.repos_dir} ({exc.strerror}). O container "
             f"roda como UID 1000; corrija o dono do volume com: docker run --rm --user 0 "
             f"-v github-bkp-data:/data --entrypoint chown github-bkp-system:latest "
             f"-R 1000:1000 /data"
-        ) from exc
+        )
+    return None
 
 
 def build(settings: Settings) -> tuple[FastAPI, Scheduler]:
     if shutil.which("git") is None:
         raise RuntimeError("git não encontrado no PATH")
-    check_data_dir(settings)
+    data_problem = check_data_dir(settings)
+    if data_problem:
+        log.error(data_problem)
     db = Database(settings.db_path)
     token = settings.github_token.get_secret_value()
     job = BackupJob(
@@ -65,7 +73,9 @@ def build(settings: Settings) -> tuple[FastAPI, Scheduler]:
         tz=settings.tz,
         last_run_started=lambda: (r.started_at if (r := db.last_run()) else None),
     )
-    return create_app(db, scheduler, settings.allowed_hosts_list, tz=settings.tz), scheduler
+    return create_app(
+        db, scheduler, settings.allowed_hosts_list, tz=settings.tz, data_problem=data_problem
+    ), scheduler
 
 
 def main() -> None:
