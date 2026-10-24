@@ -41,6 +41,12 @@ The web UI has **no authentication**. The compose file binds it to `127.0.0.1` o
 To reach it from other machines, change the port binding to a LAN or VPN address
 (e.g. your Tailscale IP) — never expose it to the internet.
 
+Two guards protect the UI from browser-based attacks: state-changing requests carrying a
+cross-site `Origin` / `Sec-Fetch-Site` header are rejected (403), and only the hostnames in
+`ALLOWED_HOSTS` (default `127.0.0.1,localhost`) are served, which blocks DNS rebinding. When you
+bind to a LAN/VPN address, add it to `ALLOWED_HOSTS`, and **keep `127.0.0.1`** in the list: the
+container healthcheck calls `http://127.0.0.1:8080/health`.
+
 The GitHub token is passed to git through environment config on each command and is never
 written to the mirrors' `config` files.
 
@@ -60,6 +66,8 @@ If you use a bind mount instead of the named volume, make the host directory wri
 git clone /data/repos/owner/repo.git repo
 # republish to a new GitHub repo
 git -C /data/repos/owner/repo.git push --mirror https://github.com/owner/new-repo.git
+# note: --mirror also pushes refs/backup/*; to publish only branches and tags use:
+git -C /data/repos/owner/repo.git push https://github.com/owner/new-repo.git 'refs/heads/*:refs/heads/*' 'refs/tags/*:refs/tags/*'
 # list preserved refs
 git -C /data/repos/owner/repo.git for-each-ref refs/backup
 ```
