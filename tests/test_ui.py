@@ -7,6 +7,7 @@ from app.state import Status
 from app.ui import (
     by_severity,
     filter_repos,
+    format_duration,
     format_when,
     history_strips,
     strip_summary,
@@ -81,7 +82,7 @@ def test_by_severity():
     assert [r.full_name for r in by_severity(repos)] == ["b/b", "c/c", "e/e", "d/d", "a/a", "a/z"]
 
 
-def test_history_strip_days_and_worst_tone():
+def test_history_strip_days_and_last_outcome():
     r = repo(1)
     events = [
         ev(1, "synced", "2026-10-23T06:00:00+00:00"),      # today local
@@ -95,8 +96,26 @@ def test_history_strip_days_and_worst_tone():
     assert [c.day.isoformat() for c in cells] == [
         "2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23",
     ]
-    assert [c.tone for c in cells] == ["none", "none", "none", "warn", "ok"]
-    assert cells[3].title == "22 out: falha"
+    assert [c.tone for c in cells] == ["none", "none", "none", "ok", "ok"]
+    assert cells[3].title == "22 out: backup ok (depois de 1 falha)"
+    assert cells[4].title == "23 out: backup ok"
+
+
+def test_history_strip_failure_after_success_shows_failure():
+    events = [
+        ev(1, "synced", "2026-10-23T03:00:00+00:00"),
+        ev(1, "error", "2026-10-23T05:00:00+00:00"),
+        ev(1, "error", "2026-10-23T06:00:00+00:00"),
+        ev(1, "backup_failing", "2026-10-23T06:00:00+00:00"),
+        ev(1, "synced", "2026-10-22T03:00:00+00:00"),
+        ev(1, "error", "2026-10-22T04:00:00+00:00"),
+        ev(1, "error", "2026-10-22T04:30:00+00:00"),
+        ev(1, "synced", "2026-10-22T05:00:00+00:00"),
+    ]
+    cells = history_strips([repo(1)], events, TZ, now=NOW, days=2)[1]
+    assert [c.tone for c in cells] == ["ok", "warn"]
+    assert cells[0].title == "22 out: backup ok (depois de 2 falhas)"
+    assert cells[1].title == "23 out: falha"
 
 
 def test_history_strip_uses_local_day():
@@ -139,3 +158,12 @@ def test_filter_repos():
     assert names(filter_repos(repos, tags, q="vertex", tag="")) == ["google-research/harness2"]
     assert names(filter_repos(repos, tags, q="", tag="edição")) == ["heygen-com/hyperframes"]
     assert names(filter_repos(repos, tags, q="hyper", tag="Skills")) == []
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [(None, "-"), (0.4, "0,4 s"), (12, "12 s"), (59.6, "60 s"), (150, "2 min 30 s"),
+     (600, "10 min"), (3725, "1 h 2 min")],
+)
+def test_format_duration(seconds, expected):
+    assert format_duration(seconds) == expected

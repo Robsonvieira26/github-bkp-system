@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app.dashboard import WINDOW_DAYS, build_dashboard
 from app.db import Database, DuplicateRepoError, utc_now
 from app.names import MAX_TAGS, parse_description, parse_repo_name, parse_tags
 from app.notifier import format_size
@@ -19,6 +20,7 @@ from app.ui import (
     TRIGGER_LABELS,
     by_severity,
     filter_repos,
+    format_duration,
     format_when,
     history_strips,
     strip_summary,
@@ -58,6 +60,7 @@ ARCHITECTURE_NAV = """
   <span class="bkp-links">
     <a href="/">Repositórios</a>
     <a href="/runs">Execuções</a>
+    <a href="/painel">Painel</a>
     <a href="/arquitetura" aria-current="page">Arquitetura</a>
   </span>
 </nav>
@@ -173,6 +176,7 @@ def create_app(
     templates = Jinja2Templates(directory=TEMPLATES_DIR)
     templates.env.filters["size"] = format_size
     templates.env.filters["when"] = lambda value: format_when(value, tz)
+    templates.env.filters["duration"] = format_duration
     templates.env.globals.update(
         status_labels=STATUS_LABELS, event_labels=EVENT_LABELS, trigger_labels=TRIGGER_LABELS
     )
@@ -314,6 +318,27 @@ def create_app(
         events = {run.id: db.events_for_run(run.id) for run in recent}
         return templates.TemplateResponse(
             request, "runs.html", {"runs": recent, "events": events}
+        )
+
+    @app.get("/painel", response_class=HTMLResponse)
+    def dashboard(request: Request):
+        since = datetime.now(UTC) - timedelta(days=WINDOW_DAYS + 1)
+        data = build_dashboard(
+            db.list_repos(),
+            db.repo_tags(),
+            db.events_since(since.isoformat(timespec="seconds")),
+            db.recent_runs(WINDOW_DAYS),
+            tz,
+        )
+        return templates.TemplateResponse(
+            request,
+            "dashboard.html",
+            {
+                "d": data,
+                "size_fmt": format_size,
+                "duration_fmt": format_duration,
+                "count_fmt": lambda n: str(int(n)),
+            },
         )
 
     architecture_html = architecture_page()

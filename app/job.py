@@ -1,4 +1,5 @@
 import logging
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -34,6 +35,7 @@ class BackupJob:
         git_base_url: str,
         token: str | None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        monotonic: Callable[[], float] = time.monotonic,
     ):
         self._db = db
         self._github = github
@@ -42,6 +44,7 @@ class BackupJob:
         self._git_base_url = git_base_url.rstrip("/")
         self._token = token
         self._now = now
+        self._monotonic = monotonic
 
     def _stamp(self) -> str:
         return self._now().isoformat(timespec="seconds")
@@ -63,12 +66,14 @@ class BackupJob:
         stamp = self._stamp()
         size = None
         preserved: list[str] = []
+        started = self._monotonic()
         try:
             outcome, error, size, preserved = self._sync(repo, stamp)
         except Exception as exc:
             log.exception("unexpected error processing %s", repo.full_name)
             error = f"erro inesperado: {exc.__class__.__name__}: {exc}"[:500]
             outcome = Outcome.ERROR
+        duration_ms = round((self._monotonic() - started) * 1000)
 
         transition = next_state(repo.state, outcome)
         try:
@@ -81,7 +86,7 @@ class BackupJob:
                 if kind == "restored":
                     since = self._db.last_event_at(repo.id, "missing")
                     detail = self._out_for(since)
-                self._db.add_event(repo.id, run_id, kind, detail, stamp)
+                self._db.add_event(repo.id, run_id, kind, detail, stamp, duration_ms)
             self._db.save_repo_state(
                 repo.id,
                 transition.state,

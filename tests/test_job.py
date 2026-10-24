@@ -225,3 +225,19 @@ def test_unexpected_error_message_includes_reason(env, monkeypatch):
     assert env.db.get_repo(r.id).last_error == (
         "erro inesperado: PermissionError: [Errno 13] Permission denied: '/data/repos/owner'"
     )
+
+
+def test_records_sync_duration_per_repo(tmp_path, remote):
+    db = Database(tmp_path / "d.db")
+    ticks = iter([10.0, 12.5, 20.0, 20.25])  # start/end for each of the two repos
+    job = BackupJob(db, FakeGitHub(), FakeNotifier(), repos_dir=tmp_path / "repos",
+                    git_base_url=remote.base_url, token=None, now=Clock(),
+                    monotonic=lambda: next(ticks))
+    db.add_repo("owner/repo")
+    gone = db.add_repo("owner/gone")
+    job._github.results["owner/gone"] = RepoCheck(CheckResult.NOT_FOUND)
+    run_id = job.run("manual")
+    durations = {(e.full_name, e.kind): e.duration_ms for e in db.events_for_run(run_id)}
+    assert durations == {("owner/gone", "not_found"): 2500, ("owner/repo", "synced"): 250}
+    assert gone.id
+    db.close()

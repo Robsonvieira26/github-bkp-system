@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% set active = "dashboard" %}
+{% block title %}Painel{% endblock %}
+
+{% macro hbars(bars, fmt, tone="accent", unit_label="Valor") %}
+<ul class="hbars mark-{{ tone }}">
+  {% for b in bars %}
+  <li tabindex="0" data-tip="{{ b.label }}: {{ fmt(b.value) }}{% if b.note %} ({{ b.note }}){% endif %}">
+    <span class="hb-label" title="{{ b.label }}">{{ b.label }}</span>
+    <span class="hb-track"><span class="hb-bar" style="width: {{ '%.2f' % b.pct }}%"></span></span>
+    <span class="hb-value">{{ fmt(b.value) }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{{ table(bars, fmt, unit_label) }}
+{% endmacro %}
+
+{% macro columns(bars, fmt, tone="accent", unit_label="Valor", label_every=1) %}
+{% set peak = bars | map(attribute="value") | max %}
+<div class="col-peak" aria-hidden="true">{{ fmt(peak) }}</div>
+<div class="cols mark-{{ tone }}" role="img" aria-label="Gráfico de colunas; os valores estão na tabela abaixo">
+  {% for b in bars %}
+  <div class="col" tabindex="0" data-tip="{{ b.label }}: {{ fmt(b.value) }}{% if b.note %} ({{ b.note }}){% endif %}">
+    <span class="col-bar{% if b.value and b.pct < 2 %} min{% endif %}" style="height: {{ '%.2f' % b.pct }}%"></span>
+  </div>
+  {% endfor %}
+</div>
+<div class="col-axis" aria-hidden="true">
+  <span>{{ bars[0].label }}</span><span>{{ bars[-1].label }}</span>
+</div>
+{{ table(bars, fmt, unit_label) }}
+{% endmacro %}
+
+{% macro table(bars, fmt, unit_label) %}
+<details class="as-table">
+  <summary>Ver tabela</summary>
+  <table>
+    <thead><tr><th scope="col">Item</th><th scope="col">{{ unit_label }}</th></tr></thead>
+    <tbody>
+      {% for b in bars %}<tr><td>{{ b.label }}{% if b.note %} <span class="muted">({{ b.note }})</span>{% endif %}</td><td class="num">{{ fmt(b.value) }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endmacro %}
+
+{% block style %}
+    .shell { max-width: 1180px; }
+    .lede { margin-bottom: 28px; }
+
+    .tiles {
+      display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 12px; margin-bottom: 12px;
+    }
+    .tile, .panel {
+      background: var(--surface); border: 1px solid var(--rule); border-radius: 12px;
+      backdrop-filter: blur(6px);
+    }
+    .tile { padding: 16px 18px; }
+    .tile-label { color: var(--muted); font-size: 13.5px; margin: 0 0 6px; }
+    .tile-value { font: 600 28px/1.1 var(--sans); letter-spacing: -0.02em; margin: 0; font-variant-numeric: proportional-nums; }
+    .tile.hero .tile-value { font-size: 48px; }
+    .tile-sub { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+    .tile .flag { display: inline-flex; align-items: center; gap: 6px; }
+    .tile .flag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .panel { padding: 18px 20px 14px; min-width: 0; }
+    .panel.wide { grid-column: 1 / -1; }
+    .panel h2 { font: 600 16px/1.3 var(--sans); margin: 0 0 4px; letter-spacing: -0.01em; }
+    .panel .hint { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+    .panel .empty-note { color: var(--muted); font-size: 14px; margin: 8px 0 6px; }
+
+    .mark-accent { --mark: var(--accent); }
+    .mark-warn { --mark: var(--warn); }
+
+    /* Horizontal bars: label | track | value. Thin marks, 4px rounded data end. */
+    .hbars { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+    .hbars li {
+      position: relative; display: grid; grid-template-columns: minmax(7rem, 38%) 1fr 5.5rem;
+      gap: 12px; align-items: center; padding: 4px 0; border-radius: 6px; outline-offset: 2px;
+    }
+    .hb-label { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hb-track { height: 12px; display: block; }
+    .hb-bar { display: block; height: 12px; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--mark); }
+    .hb-value { text-align: right; font-size: 13.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .hbars li:hover .hb-label, .hbars li:focus-visible .hb-label { color: var(--ink); }
+
+    /* Columns: one baseline, 2px surface gap between neighbours. */
+    .cols { display: flex; align-items: flex-end; gap: 2px; height: 140px; border-bottom: 1px solid var(--rule); }
+    .col { position: relative; flex: 1 1 0; min-width: 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; outline-offset: 2px; }
+    .col-bar { display: block; width: min(100%, 24px); border-radius: 4px 4px 0 0; background: var(--mark); }
+    .col-bar.min { min-height: 3px; }
+    .col:hover .col-bar, .col:focus-visible .col-bar { filter: brightness(1.15); }
+    .col-peak { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--rule); width: fit-content; min-width: 3rem; }
+    .col-axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+
+    /* Tooltip: hover or keyboard focus. Text in ink, never in the series color. */
+    [data-tip]:hover::after, [data-tip]:focus-visible::after {
+      content: attr(data-tip); position: absolute; z-index: 5; left: 50%; bottom: calc(100% + 6px);
+      transform: translateX(-50%); width: max-content; max-width: 280px;
+      padding: 6px 10px; border-radius: 8px; font-size: 13px; line-height: 1.35; white-space: normal;
+      background: var(--paper); color: var(--ink); border: 1px solid var(--rule);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); pointer-events: none;
+    }
+    .hbars li[data-tip]:hover::after, .hbars li[data-tip]:focus-visible::after { left: auto; right: 0; transform: none; }
+
+    .as-table { margin-top: 12px; }
+    .as-table summary { cursor: pointer; color: var(--accent); font-size: 13px; width: fit-content; }
+    .as-table table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13.5px; }
+    .as-table th, .as-table td { text-align: left; padding: 5px 0; border-bottom: 1px solid var(--rule); }
+    .as-table th { color: var(--muted); font-weight: 500; }
+    .as-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .errors { list-style: none; margin: 0; padding: 0; }
+    .errors li { display: grid; grid-template-columns: 9rem minmax(0, 14rem) 1fr; gap: 12px; padding: 9px 0; border-top: 1px solid var(--rule); font-size: 13.5px; }
+    .errors li:first-child { border-top: 0; }
+    .errors .when { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .errors .repo { overflow-wrap: anywhere; }
+    .errors .what { color: var(--muted); overflow-wrap: anywhere; }
+    .errors .what strong { color: var(--ink); font-weight: 500; }
+
+    @media (max-width: 900px) {
+      .tiles { grid-template-columns: 1fr 1fr; }
+      .tile.hero { grid-column: 1 / -1; }
+      .grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 560px) {
+      .shell { padding: 0 16px 48px; }
+      .tile.hero .tile-value { font-size: 40px; }
+      .hbars li { grid-template-columns: minmax(0, 1fr) 4.5rem; row-gap: 4px; }
+      .hb-track { grid-column: 1 / -1; grid-row: 2; }
+      .errors li { grid-template-columns: 1fr; gap: 2px; }
+    }
+{% endblock %}
+
+{% block content %}
+<h1>Painel</h1>
+<p class="lede">Uso de armazenamento, tempo de atualização e erros dos últimos 30 dias.</p>
+
+<section class="tiles" aria-label="Resumo">
+  <div class="tile hero">
+    <p class="tile-label">Armazenamento total</p>
+    <p class="tile-value">{{ d.total_bytes | size if d.total_bytes else "0 B" }}</p>
+    <p class="tile-sub">em {{ d.backed_up_count }} {{ "repositório" if d.backed_up_count == 1 else "repositórios" }} com backup</p>
+  </div>
+  <div class="tile">
+    <p class="tile-label">Repositórios protegidos</p>
+    <p class="tile-value">{{ d.ok_count }} de {{ d.repo_count }}</p>
+  </div>
+  <div class="tile">
+    <p class="tile-label">Duração da última execução</p>
+    <p class="tile-value">{{ d.last_run_seconds | duration }}</p>
+  </div>
+  <div class="tile">
+    <p class="tile-label">Erros em 30 dias</p>
+    <p class="tile-value">{% if d.error_total %}<span class="flag">{{ d.error_total }}</span>{% else %}0{% endif %}</p>
+    <p class="tile-sub">falhas de backup, contadas por repositório e execução</p>
+  </div>
+</section>
+
+<div class="grid">
+  <section class="panel" aria-labelledby="h-tag">
+    <h2 id="h-tag">Armazenamento por tag</h2>
+    <p class="hint">Um repositório com várias tags conta em cada uma.</p>
+    {% if d.storage_by_tag %}{{ hbars(d.storage_by_tag, size_fmt, unit_label="Tamanho") }}
+    {% else %}<p class="empty-note">Nenhum backup concluído ainda.</p>{% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="h-repo">
+    <h2 id="h-repo">Armazenamento por repositório</h2>
+    <p class="hint">Os maiores primeiro.</p>
+    {% if d.storage_by_repo %}{{ hbars(d.storage_by_repo, size_fmt, unit_label="Tamanho") }}
+    {% else %}<p class="empty-note">Nenhum backup concluído ainda.</p>{% endif %}
+  </section>
+
+  <section class="panel wide" aria-labelledby="h-runs">
+    <h2 id="h-runs">Duração das execuções</h2>
+    <p class="hint">Tempo de cada rodada de backup, da mais antiga para a mais recente.</p>
+    {% if d.run_durations %}{{ columns(d.run_durations, duration_fmt, unit_label="Duração") }}
+    {% else %}<p class="empty-note">Nenhuma execução concluída ainda.</p>{% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="h-slow">
+    <h2 id="h-slow">Repositórios mais lentos</h2>
+    <p class="hint">Tempo da última atualização de cada um (consulta ao GitHub + git).</p>
+    {% if d.slowest_repos %}{{ hbars(d.slowest_repos, duration_fmt, unit_label="Duração") }}
+    {% else %}<p class="empty-note">Ainda sem medições; elas começam na próxima execução.</p>{% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="h-err-repo">
+    <h2 id="h-err-repo">Repositórios com mais erros</h2>
+    <p class="hint">Falhas nos últimos 30 dias.</p>
+    {% if d.errors_by_repo %}{{ hbars(d.errors_by_repo, count_fmt, tone="warn", unit_label="Erros") }}
+    {% else %}<p class="empty-note">Nenhum erro nos últimos 30 dias.</p>{% endif %}
+  </section>
+
+  <section class="panel wide" aria-labelledby="h-err-day">
+    <h2 id="h-err-day">Erros por dia</h2>
+    <p class="hint">Falhas registradas em cada um dos últimos 30 dias.</p>
+    {{ columns(d.errors_by_day, count_fmt, tone="warn", unit_label="Erros") }}
+  </section>
+
+  <section class="panel wide" aria-labelledby="h-recent">
+    <h2 id="h-recent">Erros recentes</h2>
+    {% if d.recent_errors %}
+    <ul class="errors">
+      {% for e in d.recent_errors %}
+      <li>
+        <span class="when">{{ e.created_at | when }}</span>
+        <a class="repo mono" href="/?q={{ e.full_name | urlencode }}">{{ e.full_name }}</a>
+        <span class="what"><strong>{{ event_labels.get(e.kind, e.kind) }}</strong>{% if e.detail %}: {{ e.detail }}{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="empty-note">Nenhum erro nos últimos 30 dias.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

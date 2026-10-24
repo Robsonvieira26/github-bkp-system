@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.db import Database
+from app.db import Database, utc_now
 from app.state import RepoState, Status
 from app.web import create_app
 
@@ -437,3 +437,27 @@ def test_add_form_with_description(ctx):
     db, _, client = ctx
     client.post("/repos", data={"full_name": "owner/repo", "description": "Algo"})
     assert db.list_repos()[0].description == "Algo"
+
+
+def test_dashboard_page(ctx):
+    db, _, client = ctx
+    a = db.add_repo("a/video")
+    b = db.add_repo("b/agent")
+    db.add_tags(a.id, ["Edição"])
+    db.save_repo_state(a.id, RepoState(Status.ACTIVE), checked_at="2026-10-23T06:00:00+00:00",
+                       success=True, error=None, size_bytes=5 * 1024 * 1024)
+    run_id = db.start_run("schedule", "2026-10-23T06:00:00+00:00")
+    db.add_event(a.id, run_id, "synced", None, utc_now(), duration_ms=4200)
+    db.add_event(b.id, run_id, "error", "HTTP 500", utc_now(), duration_ms=900)
+    db.finish_run(run_id, 1, 1, "2026-10-23T06:01:30+00:00")
+    html = client.get("/painel").text
+    assert 'href="/painel" aria-current="page"' in html
+    assert "5.0 MB" in html and "Edição" in html
+    assert "1 min 30 s" in html and "4 s" in html
+    assert "HTTP 500" in html and "b/agent" in html
+    assert html.count("Ver tabela") >= 5
+
+
+def test_dashboard_empty(ctx):
+    _, _, client = ctx
+    assert "Nenhum backup concluído ainda" in client.get("/painel").text

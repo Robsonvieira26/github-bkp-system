@@ -12,7 +12,8 @@ and emails you when a repository disappears from GitHub (or comes back).
   `refs/backup/<date>/...` before updating.
 - Emails you when a repo returns 404 on two consecutive checks, when it comes back,
   when a backup fails 3 days in a row, plus a weekly summary.
-- Simple web UI to add/remove repos, trigger a sync and see past runs.
+- Simple web UI to add/remove repos, trigger a sync and see past runs, plus a **Painel** (dashboard)
+  with storage per tag/repo, update times and errors over the last 30 days.
 
 ## Setup
 
