@@ -79,7 +79,7 @@ class BackupJob:
                 )
                 if kind == "restored":
                     since = self._db.last_event_at(repo.id, "missing")
-                    detail = f"marcado como sumido em {since[:10]}" if since else None
+                    detail = self._out_for(since)
                 self._db.add_event(repo.id, run_id, kind, detail, stamp)
             self._db.save_repo_state(
                 repo.id,
@@ -94,6 +94,12 @@ class BackupJob:
             return False
         log.info("%s: %s -> %s", repo.full_name, outcome.value, transition.state.status.value)
         return outcome is Outcome.OK
+
+    def _out_for(self, since: str | None) -> str | None:
+        if not since:
+            return None
+        days = max(0, (self._now() - datetime.fromisoformat(since)).days)
+        return f"fora por {days} dia(s), desde {since[:10]}"
 
     def _sync(self, repo: Repo, stamp: str) -> tuple[Outcome, str | None, int | None, list[str]]:
         check = self._github.check_repo(repo.full_name)

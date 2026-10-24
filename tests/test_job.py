@@ -110,7 +110,7 @@ def test_restored_sends_email(env):
     assert env.db.get_repo(r.id).status is Status.ACTIVE
     assert len(env.nt.sent) == 2
     assert "owner/repo voltou" in env.nt.sent[1].text
-    assert "marcado como sumido em 2026-10-24" in env.nt.sent[1].text
+    assert "fora por 1 dia(s), desde 2026-10-24" in env.nt.sent[1].text
 
 
 def test_backup_failing_after_three_errors(env):
