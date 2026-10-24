@@ -8,6 +8,43 @@ from apscheduler.triggers.cron import CronTrigger
 
 log = logging.getLogger(__name__)
 
+_DOW_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def _dow_token(tok: str) -> str:
+    if not tok.isdigit():
+        return tok
+    n = int(tok)
+    if n > 7:
+        raise ValueError(f"invalid day of week: {tok}")
+    return _DOW_NAMES[(n - 1) % 7]
+
+
+def _convert_dow(field: str) -> str:
+    # APScheduler numbers weekdays from Monday=0; standard cron has Sunday=0/7.
+    # Convert numeric tokens to names so users can write standard cron.
+    parts = []
+    for item in field.split(","):
+        base, slash, step = item.partition("/")
+        base = "-".join(_dow_token(t) for t in base.split("-"))
+        parts.append(base + slash + step)
+    return ",".join(parts)
+
+
+def cron_trigger(expr: str, tz: str) -> CronTrigger:
+    fields = expr.split()
+    if len(fields) != 5:
+        raise ValueError(f"cron expression must have 5 fields: {expr!r}")
+    minute, hour, day, month, dow = fields
+    return CronTrigger(
+        minute=minute,
+        hour=hour,
+        day=day,
+        month=month,
+        day_of_week=_convert_dow(dow),
+        timezone=tz,
+    )
+
 
 class RunnableJob(Protocol):
     def run(self, trigger: str) -> int: ...
@@ -22,14 +59,14 @@ class Scheduler:
         self._sched = BackgroundScheduler(timezone=tz)
         self._sched.add_job(
             self._scheduled_sync,
-            CronTrigger.from_crontab(sync_cron, timezone=tz),
+            cron_trigger(sync_cron, tz),
             id="sync",
             max_instances=1,
             coalesce=True,
         )
         self._sched.add_job(
             job.send_summary,
-            CronTrigger.from_crontab(summary_cron, timezone=tz),
+            cron_trigger(summary_cron, tz),
             id="summary",
             max_instances=1,
             coalesce=True,

@@ -1,8 +1,9 @@
 import threading
+from datetime import UTC, datetime
 
 import pytest
 
-from app.scheduler import Scheduler
+from app.scheduler import Scheduler, cron_trigger
 
 
 class BlockingJob:
@@ -71,3 +72,45 @@ def test_jobs_registered():
 def test_invalid_cron_rejected():
     with pytest.raises(ValueError):
         Scheduler(BlockingJob(), sync_cron="not a cron", summary_cron="0 9 * * 0", tz="UTC")
+
+
+def _fires(expr, start, n=7):
+    trigger = cron_trigger(expr, "UTC")
+    out, prev, now = [], None, start
+    for _ in range(n):
+        prev = trigger.get_next_fire_time(prev, now)
+        out.append(prev)
+        now = prev
+    return out
+
+
+def test_default_summary_cron_fires_on_sunday_0900():
+    start = datetime(2026, 10, 23, tzinfo=UTC)
+    nxt = cron_trigger("0 9 * * 0", "UTC").get_next_fire_time(None, start)
+    assert nxt.weekday() == 6
+    assert (nxt.hour, nxt.minute) == (9, 0)
+
+
+def test_day_of_week_7_is_sunday():
+    nxt = cron_trigger("0 9 * * 7", "UTC").get_next_fire_time(
+        None, datetime(2026, 10, 23, tzinfo=UTC)
+    )
+    assert nxt.weekday() == 6
+
+
+def test_day_of_week_range_is_monday_to_friday():
+    days = {d.weekday() for d in _fires("0 9 * * 1-5", datetime(2026, 10, 23, tzinfo=UTC), 10)}
+    assert days == {0, 1, 2, 3, 4}
+
+
+def test_day_of_week_list_and_names():
+    days = {d.weekday() for d in _fires("0 9 * * 1,3,5", datetime(2026, 10, 23, tzinfo=UTC), 6)}
+    assert days == {0, 2, 4}
+    days = {d.weekday() for d in _fires("0 9 * * mon-fri", datetime(2026, 10, 23, tzinfo=UTC), 10)}
+    assert days == {0, 1, 2, 3, 4}
+
+
+@pytest.mark.parametrize("expr", ["0 9 * *", "0 9 * * * *", "", "a b c d e"])
+def test_cron_trigger_invalid_raises_value_error(expr):
+    with pytest.raises(ValueError):
+        cron_trigger(expr, "UTC")
