@@ -461,3 +461,17 @@ def test_dashboard_page(ctx):
 def test_dashboard_empty(ctx):
     _, _, client = ctx
     assert "Nenhum backup concluído ainda" in client.get("/painel").text
+
+
+def test_favicon_and_logo(ctx):
+    _, _, client = ctx
+    icon = client.get("/favicon.svg")
+    assert icon.status_code == 200
+    assert icon.headers["content-type"].startswith("image/svg+xml")
+    assert icon.text.lstrip().startswith("<svg")
+    ico = client.get("/favicon.ico", follow_redirects=False)
+    assert (ico.status_code, ico.headers["location"]) == (301, "/favicon.svg")
+    for page in ("/", "/runs", "/painel", "/arquitetura"):
+        html = client.get(page).text
+        assert '<link rel="icon" href="/favicon.svg" type="image/svg+xml">' in html, page
+        assert '<img src="/favicon.svg" alt="" width="26" height="26">github-bkp' in html, page

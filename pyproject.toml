@@ -29,7 +29,7 @@ github-bkp = "app.main:main"
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["templates/*.html", "static/*.html"]
+app = ["templates/*.html", "static/*.html", "static/*.svg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
