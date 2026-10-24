@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% set active = "architecture" %}
+{% block title %}Arquitetura{% endblock %}
+
+{% block style %}
+    .shell { max-width: 1280px; }
+    .arch-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; }
+    .arch-head .lede { margin-bottom: 20px; max-width: 60ch; }
+    .diagram {
+      display: block; width: 100%; height: calc(100vh - 220px); min-height: 560px;
+      border: 1px solid var(--rule); border-radius: 12px; background: var(--surface);
+    }
+    @media (max-width: 760px) {
+      .shell { padding: 0 16px 48px; }
+      .diagram { height: 75vh; min-height: 420px; }
+    }
+{% endblock %}
+
+{% block content %}
+<div class="arch-head">
+  <div>
+    <h1>Arquitetura</h1>
+    <p class="lede">Como os backups acontecem: da lista de repositórios ao mirror git e ao email de alerta. Clique nos componentes para ver detalhes.</p>
+  </div>
+  <a href="/arquitetura/diagrama" target="_blank" rel="noopener">Abrir em tela cheia</a>
+</div>
+<iframe class="diagram" src="/arquitetura/diagrama" title="Diagrama de arquitetura do github-bkp"></iframe>
+{% endblock %}

@@ -110,6 +110,11 @@ class Scheduler:
     def jobs(self) -> list[Job]:
         return self._sched.get_jobs()
 
+    def next_sync_time(self) -> datetime | None:
+        job = self._sched.get_job("sync")
+        # Jobs added before start() have no next_run_time attribute yet.
+        return getattr(job, "next_run_time", None) if job else None
+
     def is_running(self) -> bool:
         return self._lock.locked()
 

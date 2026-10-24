@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "9c8cb8f7-e3db-48ac-ae01-09badf483eb5",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\Users\\robso\\Code\\github-bkp-system\\.archify\\architecture-github-bkp-20261023-225138\\candidate.json",
+  "output": "C:\\Users\\robso\\Code\\github-bkp-system\\.archify\\architecture-github-bkp-20261023-225138\\github-bkp.html",
+  "specification": {
+    "sha256": "e1c8c768cb750dc63f109887c039e653cdfd5ced8e4f7e5a33ac5221487b63ee",
+    "bytes": 5339
+  },
+  "artifact": {
+    "sha256": "b894d35325735ab30a46bc097cfbb96863dc662c58888b5a33f5145dd700f477",
+    "bytes": 827092
+  }
+}

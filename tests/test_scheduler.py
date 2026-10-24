@@ -186,3 +186,14 @@ def test_trigger_now_releases_lock_when_thread_start_fails(monkeypatch):
     assert s.is_running() is False
     assert s.trigger_now() is True
     assert job.finished.wait(5)
+
+
+def test_next_sync_time_none_before_start_then_set():
+    s = make(BlockingJob())
+    assert s.next_sync_time() is None
+    s._sched.start(paused=True)
+    try:
+        nxt = s.next_sync_time()
+        assert nxt is not None and (nxt.hour, nxt.minute) == (3, 0)
+    finally:
+        s.shutdown()

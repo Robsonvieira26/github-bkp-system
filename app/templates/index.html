@@ -1,42 +1,160 @@
 {% extends "base.html" %}
+{% set active = "repos" %}
+{% block title %}Repositórios{% endblock %}
+
+{% block style %}
+    .actions {
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch;
+      padding: 16px; margin-bottom: 12px;
+      background: var(--surface); border: 1px solid var(--rule); border-radius: 12px;
+    }
+    .add { display: flex; flex-wrap: wrap; flex: 1 1 420px; gap: 8px; }
+    .add input {
+      flex: 1 1 14rem; min-width: 0;
+      font: 15px var(--mono); letter-spacing: -0.01em;
+      padding: 10px 12px; border-radius: 8px;
+      border: 1px solid var(--rule); background: var(--paper); color: var(--ink);
+    }
+    .add input::placeholder { color: var(--muted); font-family: var(--sans); }
+    .sync { margin-left: auto; }
+
+    .notice {
+      margin: 0 0 12px; padding: 10px 14px; border-radius: 8px;
+      border-left: 4px solid var(--ok); background: var(--surface);
+    }
+    .notice.warn { border-left-color: var(--warn); }
+
+    .repos { list-style: none; margin: 28px 0 0; padding: 0; }
+    .repo {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto 5rem;
+      grid-template-areas: "name status remove" "detail strip size";
+      column-gap: 28px; row-gap: 6px; align-items: start;
+      padding: 18px 0; border-top: 1px solid var(--rule);
+    }
+    .repo:last-child { border-bottom: 1px solid var(--rule); }
+    .repo-name { grid-area: name; font-weight: 600; overflow-wrap: anywhere; }
+    .repo-name a { color: var(--ink); text-decoration: none; }
+    .repo-name a:hover { text-decoration: underline; }
+    .repo-detail { grid-area: detail; font-size: 13.5px; color: var(--muted); }
+    .repo-detail .error { display: block; color: var(--ink); overflow-wrap: anywhere; }
+    .repo-status { grid-area: status; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+    .repo-status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+    .status-active { color: var(--ok); }
+    .status-pending { color: var(--idle); }
+    .status-suspect, .status-error { color: var(--warn); }
+    .status-missing { color: var(--bad); }
+    .repo-size { grid-area: size; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 14px; align-self: center; }
+    .repo-remove { grid-area: remove; text-align: right; }
+    .repo-remove button { padding: 0; }
+
+    .strip { grid-area: strip; display: flex; gap: 3px; align-self: center; }
+    .cell { width: 7px; height: 22px; border-radius: 2px; background: var(--cell-none); }
+    .cell.ok { background: var(--ok); }
+    .cell.warn { background: var(--warn); }
+    .cell.bad { background: var(--bad); }
+    .cell.today { box-shadow: 0 0 0 1.5px var(--paper), 0 0 0 3px var(--muted); }
+    @media (prefers-reduced-motion: no-preference) {
+      .cell { animation: fill 420ms cubic-bezier(.2,.7,.2,1) both; animation-delay: calc(var(--i) * 14ms); }
+      @keyframes fill { from { transform: scaleY(.3); } }
+    }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 14px; font-size: 13px; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend .cell { width: 7px; height: 12px; animation: none; }
+
+    .empty { padding: 40px 0; border-top: 1px solid var(--rule); color: var(--muted); max-width: 52ch; }
+    .empty strong { color: var(--ink); }
+
+    @media (max-width: 760px) {
+      .shell { padding: 0 16px 48px; }
+      .topbar { margin-bottom: 28px; }
+      .add { flex-basis: 100%; }
+      .add button, .sync, .sync button { width: 100%; }
+      .sync { margin-left: 0; }
+      .repo {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas: "name remove" "status status" "strip strip" "detail detail" "size size";
+        row-gap: 8px;
+      }
+      .strip { justify-content: space-between; gap: 2px; }
+      .cell { width: auto; flex: 1; max-width: 9px; }
+      .repo-size { text-align: left; }
+    }
+{% endblock %}
+
 {% block content %}
-<h1>Repositórios</h1>
-{% if message %}<p class="message">{{ message }}</p>{% endif %}
-
-<form method="post" action="/repos">
-  <input name="full_name" placeholder="owner/repo ou https://github.com/owner/repo" size="50" required>
-  <button type="submit">Adicionar</button>
-</form>
-
-<form method="post" action="/sync" style="margin-top: 8px">
+<h1 class="tone-{{ verdict.tone }}">{{ verdict.text }}</h1>
+<p class="lede">
   {% if running %}
-    <button type="submit" disabled>Sincronização em execução…</button>
+    Backup em execução agora.
+  {% elif last_run %}
+    Último backup {{ last_run.started_at | when }}.
   {% else %}
-    <button type="submit">Sincronizar agora</button>
+    Nenhum backup executado ainda.
   {% endif %}
-</form>
+  {% if next_sync %}Próximo {{ next_sync | when }}.{% endif %}
+</p>
 
-<table>
-  <thead><tr><th>Repositório</th><th>Status</th><th>Último sync ok</th><th>Tamanho</th><th>Último erro</th><th></th></tr></thead>
-  <tbody>
+{% if message %}<p class="notice {{ message_tone }}" role="status">{{ message }}</p>{% endif %}
+
+<div class="actions">
+  <form class="add" method="post" action="/repos">
+    <label class="sr-only" for="full_name">Repositório do GitHub</label>
+    <input id="full_name" name="full_name" placeholder="owner/repo ou URL do GitHub"
+           autocomplete="off" spellcheck="false" required>
+    <button class="primary" type="submit">Adicionar repositório</button>
+  </form>
+  <form class="sync" method="post" action="/sync">
+    {% if running %}
+      <button type="submit" disabled>Sincronização em execução…</button>
+    {% else %}
+      <button type="submit">Sincronizar agora</button>
+    {% endif %}
+  </form>
+</div>
+
+{% if repos %}
+<ul class="repos">
   {% for r in repos %}
-    <tr>
-      <td><a href="https://github.com/{{ r.full_name }}">{{ r.full_name }}</a></td>
-      <td><span class="badge status-{{ r.status.value }}">{{ r.status.value }}</span></td>
-      <td>{{ r.last_success_at or "-" }}</td>
-      <td>{{ r.size_bytes | size }}</td>
-      <td class="muted">{{ r.last_error or "" }}</td>
-      <td>
-        <form class="inline" method="post" action="/repos/{{ r.id }}/delete"
-              data-name="{{ r.full_name }}"
-              onsubmit="return confirm('Remover ' + this.dataset.name + ' da lista? A cópia local é mantida.')">
-          <button type="submit">Remover</button>
-        </form>
-      </td>
-    </tr>
-  {% else %}
-    <tr><td colspan="6" class="muted">Nenhum repositório ainda.</td></tr>
+  {% set cells = strips[r.id] %}
+  <li class="repo">
+    <div class="repo-name mono"><a href="https://github.com/{{ r.full_name }}">{{ r.full_name }}</a></div>
+    <div class="repo-status status-{{ r.status.value }}">{{ status_labels[r.status] }}</div>
+    <div class="strip" role="img" aria-label="{{ summaries[r.id] }}">
+      {% for c in cells %}<span class="cell {{ c.tone }}{% if loop.last %} today{% endif %}" style="--i: {{ loop.index0 }}" title="{{ c.title }}"></span>{% endfor %}
+    </div>
+    <div class="repo-size">{{ r.size_bytes | size }}</div>
+    <form class="repo-remove" method="post" action="/repos/{{ r.id }}/delete"
+          data-name="{{ r.full_name }}"
+          onsubmit="return confirm('Remover ' + this.dataset.name + ' da lista? A cópia local é mantida.')">
+      <button class="quiet" type="submit">Remover</button>
+    </form>
+    <div class="repo-detail">
+      {% if r.status.value == "pending" %}
+        Aguardando o primeiro backup.
+      {% elif r.last_success_at %}
+        Último backup ok {{ r.last_success_at | when }}.
+        {% if r.status.value == "missing" %}A cópia local continua guardada.{% endif %}
+      {% else %}
+        Nenhum backup concluído ainda.
+      {% endif %}
+      {% if r.last_error and r.status.value != "active" %}<span class="error">{{ r.last_error }}</span>{% endif %}
+    </div>
+  </li>
   {% endfor %}
-  </tbody>
-</table>
+</ul>
+<div class="legend" aria-hidden="true">
+  <span><i class="cell ok"></i>backup ok</span>
+  <span><i class="cell warn"></i>falha</span>
+  <span><i class="cell bad"></i>não encontrado no GitHub</span>
+  <span><i class="cell"></i>sem registro</span>
+  <span>Cada barra é um dia; a última é hoje.</span>
+</div>
+{% else %}
+<div class="empty">
+  <p><strong>Adicione o primeiro repositório acima.</strong></p>
+  <p>Aceita <span class="mono">owner/repo</span> ou a URL do GitHub. O backup roda todo dia no horário agendado, ou agora com "Sincronizar agora".</p>
+</div>
+{% endif %}
 {% endblock %}

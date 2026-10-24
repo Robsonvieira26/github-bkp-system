@@ -1,0 +1,263 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "GitHub Backup System — arquitetura",
+    "output": ".archify/architecture-github-bkp-20261023-225138/github-bkp.html",
+    "quality_profile": "showcase",
+    "locale": "pt-BR"
+  },
+  "components": [
+    {
+      "id": "admin",
+      "type": "external",
+      "label": "Você",
+      "sublabel": "navegador LAN/VPN",
+      "pos": [
+        20,
+        40
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "Web UI",
+      "sublabel": "FastAPI :8808 → :8080",
+      "pos": [
+        280,
+        40
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "sqlite",
+      "type": "database",
+      "label": "SQLite",
+      "sublabel": "/data/state.db",
+      "pos": [
+        545,
+        40
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "repos, runs, status"
+    },
+    {
+      "id": "scheduler",
+      "type": "backend",
+      "label": "Scheduler",
+      "sublabel": "cron diário + catch-up",
+      "pos": [
+        280,
+        220
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "job",
+      "type": "backend",
+      "label": "Backup Job",
+      "sublabel": "check → stage → preserva → aplica",
+      "pos": [
+        540,
+        220
+      ],
+      "size": [
+        160,
+        70
+      ]
+    },
+    {
+      "id": "mirrors",
+      "type": "database",
+      "label": "Git mirrors",
+      "sublabel": "/data/repos/*.git",
+      "pos": [
+        545,
+        400
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "refs/backup/*"
+    },
+    {
+      "id": "notifier",
+      "type": "backend",
+      "label": "Notifier",
+      "sublabel": "templates de email",
+      "pos": [
+        780,
+        400
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "github",
+      "type": "external",
+      "label": "GitHub",
+      "sublabel": "REST API + git HTTPS",
+      "pos": [
+        1000,
+        222
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "PAT read-only"
+    },
+    {
+      "id": "smtp",
+      "type": "external",
+      "label": "Servidor SMTP",
+      "sublabel": "Gmail / SES / etc.",
+      "pos": [
+        1000,
+        400
+      ],
+      "size": [
+        160,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Container Docker: github-bkp (volume /data)",
+      "wraps": [
+        "web",
+        "sqlite",
+        "scheduler",
+        "job",
+        "mirrors",
+        "notifier"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "admin-web",
+      "from": "admin",
+      "to": "web",
+      "label": "HTTP",
+      "variant": "emphasis"
+    },
+    {
+      "id": "web-sqlite",
+      "from": "web",
+      "to": "sqlite",
+      "label": "CRUD repos",
+      "variant": "emphasis"
+    },
+    {
+      "id": "web-scheduler",
+      "from": "web",
+      "to": "scheduler",
+      "label": "sync agora",
+      "variant": "dashed"
+    },
+    {
+      "id": "scheduler-job",
+      "from": "scheduler",
+      "to": "job",
+      "label": "cron 03:00 / ao iniciar",
+      "variant": "emphasis"
+    },
+    {
+      "id": "job-sqlite",
+      "from": "job",
+      "to": "sqlite",
+      "label": "lista + status"
+    },
+    {
+      "id": "job-github",
+      "from": "job",
+      "to": "github",
+      "label": "GET /repos + git fetch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "job-mirrors",
+      "from": "job",
+      "to": "mirrors",
+      "label": "atualiza refs"
+    },
+    {
+      "id": "job-notifier",
+      "from": "job",
+      "to": "notifier",
+      "label": "eventos",
+      "variant": "dashed"
+    },
+    {
+      "id": "notifier-smtp",
+      "from": "notifier",
+      "to": "smtp",
+      "label": "SMTP TLS"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Ciclo diário",
+      "items": [
+        "Para cada repo ativo: GET /repos/{owner}/{repo}",
+        "200 → fetch para refs/incoming, compara, aplica localmente (sem 2º fetch)",
+        "Servidor desligado no horário → backup de recuperação ao iniciar (>23h)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Detecção de remoção",
+      "items": [
+        "404 em 2 ciclos seguidos → status 'sumiu' + email",
+        "Volta a 200 → 'voltou' + email com dias fora",
+        "Erro de rede/auth não conta como sumiço"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Histórico protegido",
+      "items": [
+        "Force-push, branch apagada ou tag movida → cópia em refs/backup/<data>/",
+        "Mirror criado de forma atômica e nunca apagado pelo sistema"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Alertas por email",
+      "items": [
+        "Sumiu / voltou / falhando há 3 ciclos, agrupados por execução",
+        "Envio falhou → tenta de novo no próximo ciclo",
+        "Resumo semanal (domingo)"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Segurança",
+      "items": [
+        "UI sem login: só 127.0.0.1 ou LAN/VPN",
+        "POST de outro site bloqueado; hosts limitados por ALLOWED_HOSTS",
+        "Token via env do git, nunca em disco nem em mensagens de erro"
+      ]
+    }
+  ]
+}

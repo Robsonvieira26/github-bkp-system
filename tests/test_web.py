@@ -20,6 +20,9 @@ class FakeScheduler:
         self.triggered += 1
         return True
 
+    def next_sync_time(self):
+        return None
+
 
 @pytest.fixture
 def ctx(tmp_path):
@@ -197,3 +200,38 @@ def test_health_ignores_unfinished_run(ctx):
     db.finish_run(run_id, 0, 0, "b")
     db.start_run("manual", "c")
     assert client.get("/health").json() == {"ok": True, "last_run": "b"}
+
+
+def test_index_shows_verdict_strip_and_problem_first(ctx):
+    db, _, client = ctx
+    ok = db.add_repo("owner/aaa")
+    gone = db.add_repo("owner/zzz")
+    db.save_repo_state(ok.id, RepoState(Status.ACTIVE), checked_at="2026-10-23T06:00:00+00:00",
+                       success=True, error=None, size_bytes=1)
+    db.save_repo_state(gone.id, RepoState(Status.MISSING, 2), checked_at="t", success=False,
+                       error="não encontrado no GitHub (404)", size_bytes=None)
+    html = client.get("/").text
+    assert "1 repositório sumiu do GitHub." in html
+    assert html.index("owner/zzz") < html.index("owner/aaa")
+    assert html.count('class="strip"') == 2
+    assert "Últimos 30 dias:" in html
+    assert "Sumiu do GitHub" in html and "Protegido" in html
+
+
+def test_index_empty_state(ctx):
+    _, _, client = ctx
+    html = client.get("/").text
+    assert "Nenhum repositório protegido ainda." in html
+    assert "Adicione o primeiro repositório acima." in html
+
+
+def test_architecture_tab(ctx):
+    _, _, client = ctx
+    page = client.get("/arquitetura")
+    assert page.status_code == 200
+    assert '<iframe class="diagram" src="/arquitetura/diagrama"' in page.text
+    assert 'href="/arquitetura" aria-current="page"' in page.text
+    diagram = client.get("/arquitetura/diagrama")
+    assert diagram.status_code == 200
+    assert diagram.headers["content-type"].startswith("text/html")
+    assert "GitHub Backup System" in diagram.text
