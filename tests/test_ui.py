@@ -6,6 +6,7 @@ from app.db import Event, Repo
 from app.state import Status
 from app.ui import (
     by_severity,
+    filter_repos,
     format_when,
     history_strips,
     strip_summary,
@@ -126,3 +127,15 @@ def test_strip_summary():
                                        ev(1, "error", "2026-10-22T06:00:00+00:00")],
                            TZ, now=NOW, days=4)[1]
     assert strip_summary(cells) == "Últimos 4 dias: 1 com backup ok, 1 com problema."
+
+
+def test_filter_repos():
+    repos = [repo(1, name="heygen-com/hyperframes"), repo(2, name="tt-a1i/archify"),
+             repo(3, name="google-research/harness2")]
+    tags = {1: ["Edição"], 2: ["Skills"], 3: ["Agentes", "Vertex AI"]}
+    names = lambda rs: [r.full_name for r in rs]  # noqa: E731
+    assert names(filter_repos(repos, tags, q="", tag="")) == names(repos)
+    assert names(filter_repos(repos, tags, q="ARCHIFY", tag="")) == ["tt-a1i/archify"]
+    assert names(filter_repos(repos, tags, q="vertex", tag="")) == ["google-research/harness2"]
+    assert names(filter_repos(repos, tags, q="", tag="edição")) == ["heygen-com/hyperframes"]
+    assert names(filter_repos(repos, tags, q="hyper", tag="Skills")) == []

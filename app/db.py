@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS repos (
   last_error      TEXT,
   size_bytes      INTEGER,
   enabled         INTEGER NOT NULL DEFAULT 1,
-  created_at      TEXT NOT NULL
+  created_at      TEXT NOT NULL,
+  description     TEXT
 );
 CREATE TABLE IF NOT EXISTS runs (
   id          INTEGER PRIMARY KEY,
@@ -41,6 +42,15 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_pending ON events(emailed, kind);
 CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id);
+CREATE TABLE IF NOT EXISTS tags (
+  id   INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE
+);
+CREATE TABLE IF NOT EXISTS repo_tags (
+  repo_id INTEGER NOT NULL REFERENCES repos(id),
+  tag_id  INTEGER NOT NULL REFERENCES tags(id),
+  PRIMARY KEY (repo_id, tag_id)
+);
 """
 
 _EVENT_SELECT = (
@@ -70,6 +80,7 @@ class Repo:
     size_bytes: int | None
     enabled: bool
     created_at: str
+    description: str | None = None
 
     @property
     def state(self) -> RepoState:
@@ -89,6 +100,7 @@ class Repo:
             size_bytes=row["size_bytes"],
             enabled=bool(row["enabled"]),
             created_at=row["created_at"],
+            description=row["description"],
         )
 
 
@@ -141,10 +153,15 @@ class Database:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA busy_timeout=5000")
             self._conn.executescript(SCHEMA)
-            columns = {r["name"] for r in self._conn.execute("PRAGMA table_info(runs)")}
-            if "aborted" not in columns:
-                self._conn.execute("ALTER TABLE runs ADD COLUMN aborted INTEGER NOT NULL DEFAULT 0")
-                self._conn.commit()
+            self._add_missing_column("runs", "aborted", "INTEGER NOT NULL DEFAULT 0")
+            self._add_missing_column("repos", "description", "TEXT")
+
+    def _add_missing_column(self, table: str, column: str, ddl: str) -> None:
+        # Databases created by older versions lack columns added later.
+        columns = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+            self._conn.commit()
 
     def close(self) -> None:
         with self._lock:
@@ -187,6 +204,12 @@ class Database:
         rows = self._query("SELECT * FROM repos WHERE enabled = 1 ORDER BY full_name")
         return [Repo.from_row(r) for r in rows]
 
+    def find_repo(self, full_name: str) -> Repo | None:
+        rows = self._query(
+            "SELECT * FROM repos WHERE full_name = ? AND enabled = 1", (full_name,)
+        )
+        return Repo.from_row(rows[0]) if rows else None
+
     def get_repo(self, repo_id: int) -> Repo | None:
         rows = self._query("SELECT * FROM repos WHERE id = ?", (repo_id,))
         return Repo.from_row(rows[0]) if rows else None
@@ -194,6 +217,59 @@ class Database:
     def disable_repo(self, repo_id: int) -> bool:
         cur = self._write("UPDATE repos SET enabled = 0 WHERE id = ? AND enabled = 1", (repo_id,))
         return cur.rowcount > 0
+
+    def set_description(self, repo_id: int, description: str | None) -> None:
+        self._write("UPDATE repos SET description = ? WHERE id = ?", (description, repo_id))
+
+    # tags (names are matched case-insensitively; the first spelling used is kept)
+
+    def _tag_ids(self, names: Iterable[str]) -> list[int]:
+        ids = []
+        for name in names:
+            self._conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (name,))
+            ids.append(self._conn.execute("SELECT id FROM tags WHERE name = ?", (name,))
+                       .fetchone()["id"])
+        return ids
+
+    def add_tags(self, repo_id: int, names: Iterable[str]) -> None:
+        with self._lock, self._conn:
+            for tag_id in self._tag_ids(names):
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO repo_tags (repo_id, tag_id) VALUES (?, ?)",
+                    (repo_id, tag_id),
+                )
+
+    def set_tags(self, repo_id: int, names: Iterable[str]) -> None:
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM repo_tags WHERE repo_id = ?", (repo_id,))
+            for tag_id in self._tag_ids(names):
+                self._conn.execute(
+                    "INSERT INTO repo_tags (repo_id, tag_id) VALUES (?, ?)", (repo_id, tag_id)
+                )
+            self._conn.execute(
+                "DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM repo_tags)"
+            )
+
+    def repo_tags(self) -> dict[int, list[str]]:
+        """Tags of enabled repos, alphabetical."""
+        rows = self._query(
+            "SELECT rt.repo_id, t.name FROM repo_tags rt JOIN tags t ON t.id = rt.tag_id "
+            "JOIN repos r ON r.id = rt.repo_id WHERE r.enabled = 1 "
+            "ORDER BY t.name COLLATE NOCASE"
+        )
+        tags: dict[int, list[str]] = {}
+        for row in rows:
+            tags.setdefault(row["repo_id"], []).append(row["name"])
+        return tags
+
+    def tag_counts(self) -> list[tuple[str, int]]:
+        """(tag, number of enabled repos) for tags in use, alphabetical."""
+        rows = self._query(
+            "SELECT t.name, COUNT(*) AS n FROM repo_tags rt JOIN tags t ON t.id = rt.tag_id "
+            "JOIN repos r ON r.id = rt.repo_id WHERE r.enabled = 1 "
+            "GROUP BY t.id ORDER BY t.name COLLATE NOCASE"
+        )
+        return [(row["name"], row["n"]) for row in rows]
 
     def save_repo_state(
         self,

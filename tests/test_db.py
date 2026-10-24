@@ -142,3 +142,52 @@ def test_migrates_old_runs_table(tmp_path):
     finally:
         d.close()
     Database(path).close()  # reopening an already migrated db is fine
+
+
+def test_tags(db):
+    a = db.add_repo("o/a")
+    b = db.add_repo("o/b")
+    db.add_tags(a.id, ["Edição", "Estudos"])
+    db.add_tags(b.id, ["edição"])  # same tag, different case
+    db.add_tags(a.id, ["Estudos"])  # idempotent
+    assert db.repo_tags() == {a.id: ["Edição", "Estudos"], b.id: ["Edição"]}
+    assert db.tag_counts() == [("Edição", 2), ("Estudos", 1)]
+    db.set_tags(a.id, ["LLM"])
+    assert db.repo_tags() == {a.id: ["LLM"], b.id: ["Edição"]}
+    assert db.tag_counts() == [("Edição", 1), ("LLM", 1)]  # orphan "Estudos" removed
+    db.set_tags(b.id, [])
+    assert db.repo_tags() == {a.id: ["LLM"]}
+
+
+def test_tag_counts_ignore_disabled_repos(db):
+    a = db.add_repo("o/a")
+    db.add_tags(a.id, ["Skills"])
+    db.disable_repo(a.id)
+    assert db.tag_counts() == []
+    assert db.repo_tags() == {}
+
+
+def test_description(db):
+    r = db.add_repo("o/a")
+    assert r.description is None
+    db.set_description(r.id, "Edita vídeos")
+    assert db.get_repo(r.id).description == "Edita vídeos"
+    db.set_description(r.id, None)
+    assert db.get_repo(r.id).description is None
+
+
+def test_description_migration_on_old_db(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE repos (id INTEGER PRIMARY KEY, full_name TEXT NOT NULL UNIQUE, "
+                 "status TEXT NOT NULL DEFAULT 'pending', consecutive_404 INTEGER NOT NULL "
+                 "DEFAULT 0, consecutive_err INTEGER NOT NULL DEFAULT 0, last_success_at TEXT, "
+                 "last_checked_at TEXT, last_error TEXT, size_bytes INTEGER, enabled INTEGER "
+                 "NOT NULL DEFAULT 1, created_at TEXT NOT NULL)")
+    conn.execute("INSERT INTO repos (full_name, created_at) VALUES ('o/a', 'x')")
+    conn.commit()
+    conn.close()
+    d = Database(path)
+    assert d.list_repos()[0].description is None
+    d.close()

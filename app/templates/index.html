@@ -68,6 +68,45 @@
     .legend span { display: inline-flex; align-items: center; gap: 6px; }
     .legend .cell { width: 7px; height: 12px; animation: none; }
 
+    .add .tags-input { flex: 1 1 12rem; font-family: var(--sans); }
+    .add .description-input { flex-basis: 100%; font-family: var(--sans); }
+
+    .chip {
+      display: inline-flex; align-items: baseline; gap: 6px;
+      padding: 3px 10px; border-radius: 999px; border: 1px solid var(--rule);
+      font: 500 12.5px/1.4 var(--sans); color: var(--muted); text-decoration: none;
+      background: var(--surface);
+    }
+    .chip span { color: var(--idle); font-variant-numeric: tabular-nums; }
+    .chip:hover { color: var(--ink); border-color: var(--muted); }
+    .chip[aria-current] { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 14px var(--glow); }
+
+    .finder { margin: 28px 0 0; }
+    .search { display: flex; gap: 8px; max-width: 560px; }
+    .search input {
+      flex: 1; min-width: 0; font: 15px var(--sans);
+      padding: 10px 12px; border-radius: 8px;
+      border: 1px solid var(--rule); background: var(--field); color: var(--ink);
+    }
+    .tagbar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .filter-status { margin: 14px 0 0; color: var(--muted); }
+    .finder + .repos, .finder + .empty { margin-top: 16px; }
+
+    .repo-name .repo-description { margin: 4px 0 0; font-weight: 400; font-size: 14px; color: var(--muted); max-width: 62ch; }
+    .repo-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; font-weight: 400; }
+    .repo-name .repo-tags a.chip { color: var(--muted); }
+    .repo-name .repo-tags a.chip:hover { color: var(--ink); text-decoration: none; }
+
+    .repo-edit { margin-top: 8px; }
+    .repo-edit summary { cursor: pointer; color: var(--accent); width: fit-content; font-size: 13.5px; }
+    .repo-edit form { display: grid; gap: 6px; max-width: 520px; margin-top: 10px; }
+    .repo-edit label { font-size: 13px; color: var(--muted); }
+    .repo-edit textarea, .repo-edit input {
+      font: 14px/1.4 var(--sans); padding: 8px 10px; border-radius: 8px;
+      border: 1px solid var(--rule); background: var(--field); color: var(--ink); resize: vertical;
+    }
+    .repo-edit button { justify-self: start; margin-top: 4px; }
+
     .empty { padding: 32px 0 0; color: var(--muted); max-width: 52ch; }
     .empty strong { color: var(--ink); }
 
@@ -109,7 +148,13 @@
     <label class="sr-only" for="full_name">Repositório do GitHub</label>
     <input id="full_name" name="full_name" placeholder="owner/repo ou URL do GitHub"
            autocomplete="off" spellcheck="false" required>
+    <label class="sr-only" for="new_tags">Tags</label>
+    <input id="new_tags" class="tags-input" name="tags" placeholder="tags, separadas por vírgula"
+           autocomplete="off">
     <button class="primary" type="submit">Adicionar repositório</button>
+    <label class="sr-only" for="new_description">Descrição</label>
+    <input id="new_description" class="description-input" name="description" maxlength="500"
+           placeholder="descrição (opcional)" autocomplete="off">
   </form>
   <form class="sync" method="post" action="/sync">
     {% if running %}
@@ -120,12 +165,45 @@
   </form>
 </div>
 
+{% if total %}
+<div class="finder">
+  <form class="search" method="get" action="/" role="search">
+    <label class="sr-only" for="q">Buscar repositórios</label>
+    <input id="q" type="search" name="q" value="{{ q }}" placeholder="Buscar por nome, descrição ou tag">
+    {% if tag %}<input type="hidden" name="tag" value="{{ tag }}">{% endif %}
+    <button type="submit">Buscar</button>
+  </form>
+  {% if tag_counts %}
+  <nav class="tagbar" aria-label="Filtrar por tag">
+    <a class="chip" href="/{% if q %}?q={{ q | urlencode }}{% endif %}" {% if not tag %}aria-current="true"{% endif %}>Todas <span>{{ total }}</span></a>
+    {% for name, n in tag_counts %}
+    <a class="chip" href="/?tag={{ name | urlencode }}{% if q %}&amp;q={{ q | urlencode }}{% endif %}" {% if tag and tag.casefold() == name.casefold() %}aria-current="true"{% endif %}>{{ name }} <span>{{ n }}</span></a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+  {% if q or tag %}
+  <p class="filter-status" role="status">
+    {{ repos | length }} de {{ total }} repositórios{% if tag %} com a tag “{{ tag }}”{% endif %}{% if q %} contendo “{{ q }}”{% endif %}.
+    <a href="/">Limpar filtros</a>
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if repos %}
 <ul class="repos">
   {% for r in repos %}
   {% set cells = strips[r.id] %}
   <li class="repo">
-    <div class="repo-name mono"><a href="https://github.com/{{ r.full_name }}">{{ r.full_name }}</a></div>
+    <div class="repo-name">
+      <a class="mono" href="https://github.com/{{ r.full_name }}">{{ r.full_name }}</a>
+      {% if r.description %}<p class="repo-description">{{ r.description }}</p>{% endif %}
+      {% if tags[r.id] %}
+      <span class="repo-tags">
+        {% for t in tags[r.id] %}<a class="chip" href="/?tag={{ t | urlencode }}">{{ t }}</a>{% endfor %}
+      </span>
+      {% endif %}
+    </div>
     <div class="repo-status status-{{ r.status.value }}">{{ status_labels[r.status] }}</div>
     <div class="strip" role="img" aria-label="{{ summaries[r.id] }}">
       {% for c in cells %}<span class="cell {{ c.tone }}{% if loop.last %} today{% endif %}" style="--i: {{ loop.index0 }}" title="{{ c.title }}"></span>{% endfor %}
@@ -146,6 +224,16 @@
         Nenhum backup concluído ainda.
       {% endif %}
       {% if r.last_error and r.status.value != "active" %}<span class="error">{{ r.last_error }}</span>{% endif %}
+      <details class="repo-edit">
+        <summary>Editar descrição e tags</summary>
+        <form method="post" action="/repos/{{ r.id }}/edit">
+          <label for="d{{ r.id }}">Descrição</label>
+          <textarea id="d{{ r.id }}" name="description" rows="2" maxlength="500">{{ r.description or "" }}</textarea>
+          <label for="t{{ r.id }}">Tags, separadas por vírgula</label>
+          <input id="t{{ r.id }}" name="tags" value="{{ tags[r.id] | join(', ') if tags[r.id] else '' }}" autocomplete="off">
+          <button class="primary" type="submit">Salvar alterações</button>
+        </form>
+      </details>
     </div>
   </li>
   {% endfor %}
@@ -156,6 +244,11 @@
   <span><i class="cell bad"></i>não encontrado no GitHub</span>
   <span><i class="cell"></i>sem registro</span>
   <span>Cada barra é um dia; a última é hoje.</span>
+</div>
+{% elif total %}
+<div class="empty">
+  <p><strong>Nenhum repositório corresponde à busca.</strong></p>
+  <p>Tente outro termo ou <a href="/">limpe os filtros</a>.</p>
 </div>
 {% else %}
 <div class="empty">
