@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS events (
   kind       TEXT NOT NULL,
   detail     TEXT,
   created_at TEXT NOT NULL,
-  emailed    INTEGER NOT NULL DEFAULT 0
+  emailed    INTEGER NOT NULL DEFAULT 0,
+  duration_ms INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_events_pending ON events(emailed, kind);
 CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id);
@@ -133,6 +134,7 @@ class Event:
     full_name: str | None
     last_success_at: str | None
     last_error: str | None
+    duration_ms: int | None = None  # time spent on the repo in that run (check + git)
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Event":
@@ -155,6 +157,7 @@ class Database:
             self._conn.executescript(SCHEMA)
             self._add_missing_column("runs", "aborted", "INTEGER NOT NULL DEFAULT 0")
             self._add_missing_column("repos", "description", "TEXT")
+            self._add_missing_column("events", "duration_ms", "INTEGER")
 
     def _add_missing_column(self, table: str, column: str, ddl: str) -> None:
         # Databases created by older versions lack columns added later.
@@ -338,11 +341,18 @@ class Database:
     # events
 
     def add_event(
-        self, repo_id: int | None, run_id: int | None, kind: str, detail: str | None, now: str
+        self,
+        repo_id: int | None,
+        run_id: int | None,
+        kind: str,
+        detail: str | None,
+        now: str,
+        duration_ms: int | None = None,
     ) -> int:
         cur = self._write(
-            "INSERT INTO events (repo_id, run_id, kind, detail, created_at) VALUES (?, ?, ?, ?, ?)",
-            (repo_id, run_id, kind, detail, now),
+            "INSERT INTO events (repo_id, run_id, kind, detail, created_at, duration_ms) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (repo_id, run_id, kind, detail, now, duration_ms),
         )
         return cur.lastrowid
 

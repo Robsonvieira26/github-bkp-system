@@ -191,3 +191,11 @@ def test_description_migration_on_old_db(tmp_path):
     d = Database(path)
     assert d.list_repos()[0].description is None
     d.close()
+
+
+def test_event_duration(db):
+    r = db.add_repo("o/a")
+    run_id = db.start_run("manual", T1)
+    db.add_event(r.id, run_id, "synced", None, T1, duration_ms=1234)
+    db.add_event(r.id, run_id, "error", "x", T2)
+    assert [e.duration_ms for e in db.events_for_run(run_id)] == [1234, None]
