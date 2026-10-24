@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Repositórios</h1>
+{% if message %}<p class="message">{{ message }}</p>{% endif %}
+
+<form method="post" action="/repos">
+  <input name="full_name" placeholder="owner/repo ou https://github.com/owner/repo" size="50" required>
+  <button type="submit">Adicionar</button>
+</form>
+
+<form method="post" action="/sync" style="margin-top: 8px">
+  {% if running %}
+    <button type="submit" disabled>Sincronização em execução…</button>
+  {% else %}
+    <button type="submit">Sincronizar agora</button>
+  {% endif %}
+</form>
+
+<table>
+  <thead><tr><th>Repositório</th><th>Status</th><th>Último sync ok</th><th>Tamanho</th><th>Último erro</th><th></th></tr></thead>
+  <tbody>
+  {% for r in repos %}
+    <tr>
+      <td><a href="https://github.com/{{ r.full_name }}">{{ r.full_name }}</a></td>
+      <td><span class="badge status-{{ r.status.value }}">{{ r.status.value }}</span></td>
+      <td>{{ r.last_success_at or "-" }}</td>
+      <td>{{ r.size_bytes | size }}</td>
+      <td class="muted">{{ r.last_error or "" }}</td>
+      <td>
+        <form class="inline" method="post" action="/repos/{{ r.id }}/delete"
+              data-name="{{ r.full_name }}"
+              onsubmit="return confirm('Remover ' + this.dataset.name + ' da lista? A cópia local é mantida.')">
+          <button type="submit">Remover</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">Nenhum repositório ainda.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

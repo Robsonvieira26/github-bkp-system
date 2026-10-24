@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check .
+      - name: Test
+        run: pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t github-bkp-system:ci .
+      - name: Smoke test container
+        run: |
+          docker run -d --name bkp -p 127.0.0.1:8080:8080 \
+            -e GITHUB_TOKEN=dummy -e SMTP_HOST=smtp.invalid -e SMTP_USER=u \
+            -e SMTP_PASSWORD=p -e MAIL_FROM=ci@example.com -e MAIL_TO=ci@example.com \
+            github-bkp-system:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/health; then echo; break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8080/health
+          # Healthcheck runs every 60s after a 20s start period; wait for Docker to mark it healthy.
+          for i in $(seq 1 45); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' bkp)
+            echo "health: $status"
+            [ "$status" = healthy ] && exit 0
+            sleep 2
+          done
+          docker logs bkp
+          exit 1
+      - name: Container logs
+        if: failure()
+        run: docker logs bkp || true

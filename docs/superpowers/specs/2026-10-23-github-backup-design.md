@@ -152,7 +152,7 @@ remote.origin.fetch = +refs/heads/*:refs/heads/*
 remote.origin.fetch = +refs/tags/*:refs/tags/*
 ```
 
-(sem `refs/pull/*`). Com isso `--prune` só mexe em `refs/heads` e `refs/tags`.
+(sem `refs/pull/*`). Com isso `--prune` só mexe em `refs/heads` e `refs/tags`. O clone e essa configuração são feitos em `<nome>.git.tmp` e só então movidos (`os.replace`) para o caminho final, para que um mirror meio configurado nunca pareça pronto.
 
 Atualização em duas fases (`snapshot_vanishing_refs` + `update_mirror`):
 
@@ -161,7 +161,7 @@ Atualização em duas fases (`snapshot_vanishing_refs` + `update_mirror`):
    - sem correspondente em `refs/incoming/*` → **apagada no remoto**;
    - correspondente existe e `git merge-base --is-ancestor <local> <incoming>` falha → **force-push**.
 3. **Preservação:** para cada ref nesses casos, `git update-ref refs/backup/<YYYY-MM-DD>/<ref-original> <sha-local>`; registra evento `refs_preserved` com a lista. Se já existe uma ref com o mesmo nome no mesmo dia, adiciona sufixo `-2`, `-3`...
-4. **Aplicação:** `git fetch --prune origin` (refspecs acima; objetos já estão locais, então é rápido).
+4. **Aplicação:** `git fetch --prune --no-tags . +refs/incoming/heads/*:refs/heads/* +refs/incoming/tags/*:refs/tags/*` — aplica localmente exatamente o que foi comparado, sem ir à rede (um segundo fetch do `origin` poderia trazer um force-push ocorrido depois da comparação, sem backup).
 5. **Limpeza:** `git update-ref -d` em todas as `refs/incoming/*`.
 
 Refs em `refs/backup/` nunca são removidas automaticamente.
