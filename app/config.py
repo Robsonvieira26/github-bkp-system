@@ -1,0 +1,35 @@
+from pathlib import Path
+
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(extra="ignore")
+
+    github_token: SecretStr
+    smtp_host: str
+    smtp_port: int = 587
+    smtp_user: str
+    smtp_password: SecretStr
+    smtp_starttls: bool = True
+    mail_from: str
+    mail_to: str
+    sync_cron: str = "0 3 * * *"
+    summary_cron: str = "0 9 * * 0"
+    tz: str = "UTC"
+    data_dir: Path = Path("/data")
+    github_api_url: str = "https://api.github.com"
+    github_git_url: str = "https://github.com"
+
+    @property
+    def mail_to_list(self) -> list[str]:
+        return [addr.strip() for addr in self.mail_to.split(",") if addr.strip()]
+
+    @property
+    def db_path(self) -> Path:
+        return self.data_dir / "state.db"
+
+    @property
+    def repos_dir(self) -> Path:
+        return self.data_dir / "repos"
