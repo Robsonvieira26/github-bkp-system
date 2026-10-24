@@ -94,3 +94,8 @@ def test_events_and_email_queue(db):
     assert [e.kind for e in db.events_since(T2)] == ["missing", "restored"]
     assert db.last_event_at(r.id, "missing") == T2
     assert db.last_event_at(r.id, "backup_failing") is None
+
+
+def test_connection_uses_wal_and_busy_timeout(db):
+    assert db._query("PRAGMA journal_mode")[0][0] == "wal"
+    assert db._query("PRAGMA busy_timeout")[0][0] == 5000

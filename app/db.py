@@ -132,6 +132,10 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.Lock()
         with self._lock:
+            # WAL lets the web UI read while a backup run writes; busy_timeout makes a
+            # briefly locked database wait instead of failing with "database is locked".
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA busy_timeout=5000")
             self._conn.executescript(SCHEMA)
 
     def close(self) -> None:
@@ -151,7 +155,9 @@ class Database:
     # repos
 
     def add_repo(self, full_name: str, now: str | None = None) -> Repo:
-        with self._lock:
+        # The connection context manager commits the read-modify-write as one
+        # transaction, or rolls it back if anything in it raises.
+        with self._lock, self._conn:
             row = self._conn.execute(
                 "SELECT * FROM repos WHERE full_name = ?", (full_name,)
             ).fetchone()
@@ -166,7 +172,6 @@ class Database:
                     (full_name, now or utc_now()),
                 )
                 repo_id = cur.lastrowid
-            self._conn.commit()
             row = self._conn.execute("SELECT * FROM repos WHERE id = ?", (repo_id,)).fetchone()
         return Repo.from_row(row)
 
