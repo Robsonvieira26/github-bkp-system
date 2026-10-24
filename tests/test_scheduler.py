@@ -165,3 +165,24 @@ def test_start_skips_catch_up_when_last_run_is_recent():
 def test_jobs_have_misfire_grace_time():
     s = make(BlockingJob())
     assert {j.misfire_grace_time for j in s.jobs()} == {3600}
+
+
+def test_trigger_now_releases_lock_when_thread_start_fails(monkeypatch):
+    job = BlockingJob()
+    job.release.set()
+    s = make(job)
+    real_start = threading.Thread.start
+    calls = []
+
+    def flaky(self):
+        if not calls:
+            calls.append(1)
+            raise RuntimeError("can't start new thread")
+        return real_start(self)
+
+    monkeypatch.setattr(threading.Thread, "start", flaky)
+    with pytest.raises(RuntimeError):
+        s.trigger_now()
+    assert s.is_running() is False
+    assert s.trigger_now() is True
+    assert job.finished.wait(5)

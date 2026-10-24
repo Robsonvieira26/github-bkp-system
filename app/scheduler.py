@@ -117,7 +117,11 @@ class Scheduler:
         """Start a run in the background. False if a run is already in progress."""
         if not self._lock.acquire(blocking=False):
             return False
-        threading.Thread(target=self._run_locked, args=(trigger,), daemon=True).start()
+        try:
+            threading.Thread(target=self._run_locked, args=(trigger,), daemon=True).start()
+        except BaseException:
+            self._lock.release()
+            raise
         return True
 
     def _scheduled_sync(self) -> None:
