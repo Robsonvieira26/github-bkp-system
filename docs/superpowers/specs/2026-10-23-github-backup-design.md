@@ -181,7 +181,7 @@ Vários eventos do mesmo ciclo são agrupados em **um** email no fim do ciclo (e
 
 ## 8. Web UI
 
-Sem auth; porta exposta só em LAN/VPN (documentado no README e no `docker-compose.yml`, bind padrão `127.0.0.1:8080` — o usuário muda para o IP da LAN/VPN conscientemente).
+Sem auth; porta exposta só em LAN/VPN (documentado no README e no `docker-compose.yml`, bind padrão `127.0.0.1:8808` (porta 8080 dentro do container) — o usuário muda para o IP da LAN/VPN conscientemente).
 
 Páginas (server-side + HTMX):
 

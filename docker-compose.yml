@@ -7,7 +7,7 @@ services:
     init: true
     ports:
       # Web UI has no authentication: keep it on localhost or a LAN/VPN address only.
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8808:8080"
     volumes:
       - bkp-data:/data
     restart: unless-stopped

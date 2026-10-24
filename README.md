@@ -25,7 +25,7 @@ and emails you when a repository disappears from GitHub (or comes back).
    docker compose up -d --build
    ```
 
-4. Open http://127.0.0.1:8080 and add repos as `owner/repo` or a GitHub URL.
+4. Open http://127.0.0.1:8808 and add repos as `owner/repo` or a GitHub URL.
 
 ## Schedule
 
