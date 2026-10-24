@@ -32,7 +32,8 @@ TRIGGER_LABELS = {"schedule": "Agendada", "manual": "Manual", "startup": "Ao ini
 
 _MONTHS = ("jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez")
 
-# Day cell tone, worst wins: a day with an error and a later success still shows the error.
+# Day cell tone. The day's last outcome wins, so a failure fixed by a later run in the same
+# day shows as ok (the tooltip still counts the earlier failures).
 _EVENT_TONE = {
     "synced": "ok",
     "restored": "ok",
@@ -42,7 +43,7 @@ _EVENT_TONE = {
     "not_found": "bad",
     "missing": "bad",
 }
-_TONE_RANK = {"none": 0, "ok": 1, "warn": 2, "bad": 3}
+_FAILURE_KINDS = {"error", "not_found", "missing"}  # backup_failing only summarizes errors
 _TONE_WORDS = {"ok": "backup ok", "warn": "falha", "bad": "não encontrado", "none": "sem registro"}
 
 
@@ -132,13 +133,14 @@ def history_strips(
     repos: list[Repo], events: list[Event], tz: str, now: datetime | None = None,
     days: int = HISTORY_DAYS,
 ) -> dict[int, list[DayCell]]:
-    """Per repo, one cell per local day (oldest first) with the worst outcome recorded that day."""
+    """Per repo, one cell per local day (oldest first) with the day's last outcome."""
     zone = ZoneInfo(tz)
     today = (now or datetime.now(UTC)).astimezone(zone).date()
     first = today - timedelta(days=days - 1)
     tones: dict[int, dict[date, str]] = {r.id: {} for r in repos}
+    failures: dict[int, dict[date, int]] = {r.id: {} for r in repos}
     missing_since: dict[int, date] = {}
-    for e in events:
+    for e in sorted(events, key=lambda e: (_parse(e.created_at), e.id)):
         tone = _EVENT_TONE.get(e.kind)
         if tone is None or e.repo_id not in tones:
             continue
@@ -147,9 +149,11 @@ def history_strips(
             missing_since[e.repo_id] = day
         if day < first:
             continue
-        current = tones[e.repo_id].get(day, "none")
-        if _TONE_RANK[tone] > _TONE_RANK[current]:
+        # backup_failing comes with the error it summarizes; don't let it override the day.
+        if e.kind != "backup_failing":
             tones[e.repo_id][day] = tone
+        if e.kind in _FAILURE_KINDS:
+            failures[e.repo_id][day] = failures[e.repo_id].get(day, 0) + 1
 
     strips = {}
     for repo in repos:
@@ -165,6 +169,9 @@ def history_strips(
             day = first + timedelta(days=offset)
             tone = by_day.get(day, "none")
             title = f"{day.day} {_MONTHS[day.month - 1]}: {_TONE_WORDS[tone]}"
+            failed = failures[repo.id].get(day, 0)
+            if tone == "ok" and failed:
+                title += f" (depois de {failed} {'falha' if failed == 1 else 'falhas'})"
             cells.append(DayCell(day, tone, title))
         strips[repo.id] = cells
     return strips
@@ -190,3 +197,18 @@ def filter_repos(repos: list[Repo], tags: dict[int, list[str]], q: str, tag: str
             continue
         result.append(repo)
     return result
+
+
+def format_duration(seconds: float | None) -> str:
+    """'0,4 s', '12 s', '2 min 30 s', '1 h 2 min'."""
+    if seconds is None:
+        return "-"
+    if seconds < 1:
+        return f"{seconds:.1f} s".replace(".", ",")
+    if seconds < 60:
+        return f"{round(seconds)} s"
+    minutes, secs = divmod(round(seconds), 60)
+    if minutes < 60:
+        return f"{minutes} min {secs} s" if secs else f"{minutes} min"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes} min" if minutes else f"{hours} h"
