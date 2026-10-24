@@ -136,12 +136,8 @@ def create_app(
             request, "runs.html", {"runs": recent, "events": events}
         )
 
-    @app.get("/arquitetura", response_class=HTMLResponse)
-    def architecture(request: Request):
-        return templates.TemplateResponse(request, "architecture.html", {})
-
-    @app.get("/arquitetura/diagrama")
-    def architecture_diagram():
+    @app.get("/arquitetura")
+    def architecture():
         return FileResponse(ARCHITECTURE_HTML, media_type="text/html")
 
     @app.get("/health")

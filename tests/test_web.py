@@ -227,11 +227,9 @@ def test_index_empty_state(ctx):
 
 def test_architecture_tab(ctx):
     _, _, client = ctx
+    assert 'href="/arquitetura"' in client.get("/").text
     page = client.get("/arquitetura")
     assert page.status_code == 200
-    assert '<iframe class="diagram" src="/arquitetura/diagrama"' in page.text
-    assert 'href="/arquitetura" aria-current="page"' in page.text
-    diagram = client.get("/arquitetura/diagrama")
-    assert diagram.status_code == 200
-    assert diagram.headers["content-type"].startswith("text/html")
-    assert "GitHub Backup System" in diagram.text
+    assert page.headers["content-type"].startswith("text/html")
+    assert "GitHub Backup System" in page.text
+    assert "<iframe" not in page.text
