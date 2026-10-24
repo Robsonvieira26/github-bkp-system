@@ -24,6 +24,7 @@
       border-left: 4px solid var(--ok); background: var(--surface);
     }
     .notice.warn { border-left-color: var(--warn); }
+    .notice.problem { overflow-wrap: anywhere; }
 
     .repos {
       list-style: none; margin: 28px 0 0; padding: 0 20px;
@@ -141,6 +142,7 @@
   {% if next_sync %}Próximo {{ next_sync | when }}.{% endif %}
 </p>
 
+{% if data_problem %}<p class="notice warn problem" role="alert">{{ data_problem }}</p>{% endif %}
 {% if message %}<p class="notice {{ message_tone }}" role="status">{{ message }}</p>{% endif %}
 
 <div class="actions">

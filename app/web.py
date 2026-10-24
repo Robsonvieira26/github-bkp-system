@@ -152,6 +152,7 @@ def create_app(
     scheduler: SchedulerLike,
     allowed_hosts: list[str] | None = None,
     tz: str = "UTC",
+    data_problem: str | None = None,
 ) -> FastAPI:
     app = FastAPI(title="github-bkp", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -202,6 +203,7 @@ def create_app(
                 "message": MESSAGES.get(msg or ""),
                 "message_tone": "warn" if msg in PROBLEM_MESSAGES else "ok",
                 "running": scheduler.is_running(),
+                "data_problem": data_problem,
             },
         )
 
@@ -323,6 +325,9 @@ def create_app(
     @app.get("/health")
     def health():
         last = db.last_finished_run()
-        return {"ok": True, "last_run": last.finished_at if last else None}
+        body = {"ok": True, "last_run": last.finished_at if last else None}
+        if data_problem:
+            body["problem"] = data_problem
+        return body
 
     return app
