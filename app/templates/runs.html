@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Execuções</h1>
+<table>
+  <thead><tr><th>#</th><th>Início</th><th>Fim</th><th>Origem</th><th>OK</th><th>Falhas</th></tr></thead>
+  <tbody>
+  {% for run in runs %}
+    <tr>
+      <td>{{ run.id }}</td>
+      <td>{{ run.started_at }}</td>
+      <td>{{ run.finished_at or "em execução" }}</td>
+      <td>{{ run.trigger }}</td>
+      <td>{{ run.ok_count }}</td>
+      <td>{{ run.fail_count }}</td>
+    </tr>
+    {% if events[run.id] %}
+    <tr><td></td><td colspan="5">
+      <details><summary class="muted">{{ events[run.id] | length }} evento(s)</summary>
+        <ul>
+        {% for e in events[run.id] %}
+          <li>{{ e.full_name or "-" }} — <strong>{{ e.kind }}</strong>{% if e.detail %}: {{ e.detail }}{% endif %}</li>
+        {% endfor %}
+        </ul>
+      </details>
+    </td></tr>
+    {% endif %}
+  {% else %}
+    <tr><td colspan="6" class="muted">Nenhuma execução ainda.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
