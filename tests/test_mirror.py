@@ -166,3 +166,35 @@ def test_git_error_redacts_token(monkeypatch, tmp_path):
     assert token not in message
     assert basic not in message
     assert "***" in message
+
+
+def test_ensure_mirror_is_atomic_when_config_fails(remote, mirror_dir, monkeypatch):
+    real_git = mirror._git
+
+    def failing_git(args, **kwargs):
+        if args[0] == "config":
+            raise GitError("git config falhou: boom")
+        return real_git(args, **kwargs)
+
+    monkeypatch.setattr(mirror, "_git", failing_git)
+    with pytest.raises(GitError):
+        ensure_mirror(mirror_dir, remote.url, None)
+    assert not mirror_dir.exists()
+
+    monkeypatch.setattr(mirror, "_git", real_git)
+    assert ensure_mirror(mirror_dir, remote.url, None) is True
+    fetch = git("config", "--get-all", "remote.origin.fetch", cwd=mirror_dir).split()
+    assert fetch == ["+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*"]
+    assert git("config", "remote.origin.mirror", cwd=mirror_dir).strip() == "false"
+    assert not mirror_dir.with_name(mirror_dir.name + ".tmp").exists()
+
+
+def test_ensure_mirror_removes_stale_temp_dir(remote, mirror_dir):
+    stale = mirror_dir.with_name(mirror_dir.name + ".tmp")
+    (stale / "objects").mkdir(parents=True)
+    junk = stale / "objects" / "junk"
+    junk.write_text("x")
+    junk.chmod(0o444)  # git writes objects read-only; rmtree must cope on Windows
+    assert ensure_mirror(mirror_dir, remote.url, None) is True
+    assert not stale.exists()
+    assert rev(mirror_dir, "refs/heads/main") == rev(remote.work, "HEAD")

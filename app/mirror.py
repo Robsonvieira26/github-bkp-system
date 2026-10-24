@@ -1,5 +1,7 @@
 import base64
 import os
+import shutil
+import stat
 import subprocess
 from pathlib import Path
 
@@ -103,18 +105,33 @@ def _unique_ref(base: str, existing: set[str]) -> str:
     return f"{base}-{n}"
 
 
+def _force_remove_readonly(func, path, exc) -> None:
+    # git writes pack/object files read-only; on Windows rmtree can't delete them as-is.
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 def ensure_mirror(path: Path, url: str, token: str | None) -> bool:
     """Clone a bare mirror if missing. Returns True when a new clone was created."""
     if (path / "HEAD").exists():
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
-    _git(["clone", "--mirror", url, str(path)], token=token)
-    # The default mirror refspec (+refs/*:refs/*) would let --prune delete refs/backup/*.
-    _git(["config", "--unset-all", "remote.origin.fetch"], cwd=path)
+    # Build the mirror in a sibling dir and move it into place only when fully configured.
+    # A clone left half-configured (default +refs/*:refs/*, mirror=true) would look ready
+    # by HEAD alone, and its next `fetch --prune` would delete refs/backup/*.
+    tmp = path.with_name(path.name + ".tmp")
+    if tmp.exists():
+        shutil.rmtree(tmp, onexc=_force_remove_readonly)
+    _git(["clone", "--mirror", url, str(tmp)], token=token)
+    _git(["config", "--unset-all", "remote.origin.fetch"], cwd=tmp)
     for spec in FETCH_REFSPECS:
-        _git(["config", "--add", "remote.origin.fetch", spec], cwd=path)
-    _git(["config", "remote.origin.mirror", "false"], cwd=path)
-    _delete_refs(path, "refs/pull/")
+        _git(["config", "--add", "remote.origin.fetch", spec], cwd=tmp)
+    _git(["config", "remote.origin.mirror", "false"], cwd=tmp)
+    _delete_refs(tmp, "refs/pull/")
+    try:
+        os.replace(tmp, path)
+    except OSError as exc:
+        raise GitError(f"não foi possível mover o mirror para {path}: {exc}") from exc
     return True
 
 
