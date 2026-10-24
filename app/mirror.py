@@ -1,8 +1,10 @@
 import base64
 import os
+import re
 import shutil
 import stat
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
 
 GIT_TIMEOUT_SECONDS = 30 * 60
@@ -97,13 +99,35 @@ def _is_ancestor(path: Path, old: str, new: str) -> bool:
     raise GitError(f"git merge-base falhou: {proc.stderr.strip()[:500]}")
 
 
+def _ref_taken(candidate: str, existing: Iterable[str]) -> bool:
+    # Refs are stored as paths, so refs/x and refs/x/y can't coexist (D/F conflict):
+    # a name is taken if it equals an existing ref or either is a path prefix of the other.
+    c = candidate + "/"
+    return any(c.startswith(e + "/") or (e + "/").startswith(c) for e in existing)
+
+
 def _unique_ref(base: str, existing: set[str]) -> str:
-    if base not in existing:
-        return base
-    n = 2
-    while f"{base}-{n}" in existing:
+    # If a parent path of base is itself a ref, suffixing the leaf can never resolve the
+    # conflict, so the suffix goes on that component instead (heads/foo-2/bar).
+    ancestor = next((e for e in existing if base.startswith(e + "/")), None)
+    head, rest = (ancestor, base[len(ancestor):]) if ancestor else (base, "")
+    candidate = base
+    n = 1
+    while _ref_taken(candidate, existing):
         n += 1
-    return f"{base}-{n}"
+        candidate = f"{head}-{n}{rest}"
+    return candidate
+
+
+def _is_variant(name: str, base: str) -> bool:
+    """True if name is base, or base with "-N" on one component (as _unique_ref builds)."""
+    parts, base_parts = name.split("/"), base.split("/")
+    if len(parts) != len(base_parts):
+        return False
+    diffs = [(p, b) for p, b in zip(parts, base_parts, strict=True) if p != b]
+    return not diffs or (
+        len(diffs) == 1 and re.fullmatch(re.escape(diffs[0][1]) + r"-\d+", diffs[0][0]) is not None
+    )
 
 
 def _force_remove_readonly(func, path, exc) -> None:
@@ -139,7 +163,7 @@ def ensure_mirror(path: Path, url: str, token: str | None) -> bool:
 def _preserve_vanishing_refs(path: Path, today: str) -> list[str]:
     local = _list_refs(path, "refs/heads/", "refs/tags/")
     incoming = _list_refs(path, INCOMING)
-    existing_backups = set(_list_refs(path, "refs/backup/"))
+    existing_backups = _list_refs(path, "refs/backup/")
     preserved = []
     for name, sha in sorted(local.items()):
         short = name.removeprefix("refs/")
@@ -148,9 +172,17 @@ def _preserve_vanishing_refs(path: Path, today: str) -> list[str]:
             continue
         if new is not None and name.startswith("refs/heads/") and _is_ancestor(path, sha, new):
             continue
-        target = _unique_ref(f"refs/backup/{today}/{short}", existing_backups)
-        _git(["update-ref", target, sha], cwd=path)
-        existing_backups.add(target)
+        base = f"refs/backup/{today}/{short}"
+        # Already saved today (e.g. a retry after the apply step failed): don't pile up
+        # copies. Still reported, since the failed run never got to report it.
+        already = any(
+            b_sha == sha and _is_variant(b_name, base)
+            for b_name, b_sha in existing_backups.items()
+        )
+        if not already:
+            target = _unique_ref(base, set(existing_backups))
+            _git(["update-ref", target, sha], cwd=path)
+            existing_backups[target] = sha
         preserved.append(name)
     return preserved
 

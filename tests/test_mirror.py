@@ -233,3 +233,84 @@ def test_sync_applies_staged_refs_not_a_second_fetch(remote, mirror_dir, monkeyp
     monkeypatch.setattr(mirror, "_preserve_vanishing_refs", preserve_then_force_push)
     assert sync_mirror(mirror_dir, None, TODAY) == []
     assert rev(mirror_dir, "refs/heads/main") == staged
+
+
+def _backup_refs(path: Path) -> dict[str, str]:
+    out = git("for-each-ref", "--format=%(refname) %(objectname)", "refs/backup/", cwd=path)
+    return dict(line.split(" ", 1) for line in out.splitlines())
+
+
+def test_backup_names_avoid_directory_file_conflicts(remote, mirror_dir):
+    ensure_mirror(mirror_dir, remote.url, None)
+    foo = remote.commit("foo")
+    remote.push("HEAD:refs/heads/foo")
+    sync_mirror(mirror_dir, None, TODAY)
+    remote.push("--delete", "foo")
+    assert sync_mirror(mirror_dir, None, TODAY) == ["refs/heads/foo"]
+
+    # refs/backup/<today>/heads/foo now exists, so heads/foo/bar can't go under it.
+    bar = remote.commit("foo/bar")
+    remote.push("HEAD:refs/heads/foo/bar")
+    sync_mirror(mirror_dir, None, TODAY)
+    remote.push("--delete", "foo/bar")
+    assert sync_mirror(mirror_dir, None, TODAY) == ["refs/heads/foo/bar"]
+
+    backups = _backup_refs(mirror_dir)
+    assert backups[f"refs/backup/{TODAY}/heads/foo"] == foo
+    assert backups[f"refs/backup/{TODAY}/heads/foo-2/bar"] == bar
+
+
+def test_backup_names_avoid_file_directory_conflicts(remote, mirror_dir):
+    ensure_mirror(mirror_dir, remote.url, None)
+    bar = remote.commit("foo/bar")
+    remote.push("HEAD:refs/heads/foo/bar")
+    sync_mirror(mirror_dir, None, TODAY)
+    remote.push("--delete", "foo/bar")
+    sync_mirror(mirror_dir, None, TODAY)
+
+    foo = remote.commit("foo")
+    remote.push("HEAD:refs/heads/foo")
+    sync_mirror(mirror_dir, None, TODAY)
+    remote.push("--delete", "foo")
+    assert sync_mirror(mirror_dir, None, TODAY) == ["refs/heads/foo"]
+
+    backups = _backup_refs(mirror_dir)
+    assert backups[f"refs/backup/{TODAY}/heads/foo/bar"] == bar
+    assert backups[f"refs/backup/{TODAY}/heads/foo-2"] == foo
+
+
+def test_retry_after_failed_apply_does_not_duplicate_backup(remote, mirror_dir, monkeypatch):
+    lost = remote.commit("will be lost")
+    remote.push("main")
+    ensure_mirror(mirror_dir, remote.url, None)
+    git("reset", "--hard", "HEAD~1", cwd=remote.work)
+    remote.commit("rewritten")
+    remote.push("--force", "main")
+
+    real_git = mirror._git
+    calls = {"apply": 0}
+
+    def flaky_git(args, **kwargs):
+        if args[0] == "fetch" and "." in args:
+            calls["apply"] += 1
+            if calls["apply"] == 1:
+                raise GitError("git fetch falhou: boom")
+        return real_git(args, **kwargs)
+
+    monkeypatch.setattr(mirror, "_git", flaky_git)
+    with pytest.raises(GitError):
+        sync_mirror(mirror_dir, None, TODAY)
+    # The failed run never got to report the force-push, so the retry still does.
+    assert sync_mirror(mirror_dir, None, TODAY) == ["refs/heads/main"]
+    assert _backup_refs(mirror_dir) == {f"refs/backup/{TODAY}/heads/main": lost}
+
+
+def test_same_sha_vanishing_twice_keeps_one_backup(remote, mirror_dir):
+    ensure_mirror(mirror_dir, remote.url, None)
+    sha = remote.commit("tmp")
+    for _ in range(2):
+        remote.push("HEAD:refs/heads/tmp")
+        sync_mirror(mirror_dir, None, TODAY)
+        remote.push("--delete", "tmp")
+        sync_mirror(mirror_dir, None, TODAY)
+    assert _backup_refs(mirror_dir) == {f"refs/backup/{TODAY}/heads/tmp": sha}
