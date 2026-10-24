@@ -4,8 +4,9 @@ from typing import Annotated, Protocol
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.db import Database, DuplicateRepoError, utc_now
@@ -86,6 +87,10 @@ class SchedulerLike(Protocol):
     def next_sync_time(self) -> datetime | None: ...
 
 
+class AddReposRequest(BaseModel):
+    repos: list[str] = Field(min_length=1, max_length=100)
+
+
 def _redirect(msg: str) -> RedirectResponse:
     return RedirectResponse(f"/?msg={msg}", status_code=303)
 
@@ -155,6 +160,25 @@ def create_app(
         except DuplicateRepoError:
             return _redirect("duplicate")
         return _redirect("added")
+
+    @app.post("/api/repos")
+    def api_add_repos(body: AddReposRequest):
+        """Add repos in bulk. Same accepted formats as the form; one result per input."""
+        results = []
+        for text in body.repos:
+            try:
+                name = parse_repo_name(text)
+            except ValueError:
+                results.append({"input": text, "full_name": None, "status": "invalid"})
+                continue
+            try:
+                db.add_repo(name)
+                status = "added"
+            except DuplicateRepoError:
+                status = "duplicate"
+            results.append({"input": text, "full_name": name, "status": status})
+        added = any(r["status"] == "added" for r in results)
+        return JSONResponse({"results": results}, status_code=201 if added else 200)
 
     @app.post("/repos/{repo_id}/delete")
     def delete_repo(repo_id: int):
