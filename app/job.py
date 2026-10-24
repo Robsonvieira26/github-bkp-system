@@ -1,5 +1,4 @@
 import logging
-import subprocess
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -100,9 +99,8 @@ class BackupJob:
             ensure_mirror(path, url, self._token)
             preserved = sync_mirror(path, self._token, stamp[:10])
         except GitError as exc:
+            # Includes timeouts and a missing git binary (see app.mirror._run).
             return Outcome.ERROR, str(exc), None
-        except subprocess.TimeoutExpired:
-            return Outcome.ERROR, "git timeout", None
         if preserved:
             self._db.add_event(repo.id, run_id, "refs_preserved", ", ".join(preserved), stamp)
         return Outcome.OK, None, repo_size(path)

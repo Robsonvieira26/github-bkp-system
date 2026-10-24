@@ -18,6 +18,10 @@ def mirror_path(repos_dir: Path, full_name: str) -> Path:
     return repos_dir / owner / f"{repo}.git"
 
 
+def _basic_auth(token: str) -> str:
+    return base64.b64encode(f"x-access-token:{token}".encode()).decode()
+
+
 def _run(
     args: list[str],
     cwd: Path | None = None,
@@ -28,20 +32,25 @@ def _run(
     env["GIT_TERMINAL_PROMPT"] = "0"
     if token:
         # Passed via env so the token never lands in .git/config or the process list.
-        basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
         env["GIT_CONFIG_COUNT"] = "1"
         env["GIT_CONFIG_KEY_0"] = "http.extraHeader"
-        env["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {basic}"
+        env["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {_basic_auth(token)}"
     # Bytes in/out: text mode would translate LF to CRLF on stdin on Windows,
     # which breaks `update-ref --stdin`.
-    proc = subprocess.run(
-        ["git", *args],
-        cwd=cwd,
-        env=env,
-        input=input.encode() if input is not None else None,
-        capture_output=True,
-        timeout=GIT_TIMEOUT_SECONDS,
-    )
+    # Callers only handle GitError, so every way git can fail must surface as one.
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            env=env,
+            input=input.encode() if input is not None else None,
+            capture_output=True,
+            timeout=GIT_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        raise GitError(f"git {args[0]} excedeu o tempo limite") from None
+    except FileNotFoundError:
+        raise GitError("git não encontrado") from None
     return subprocess.CompletedProcess(
         proc.args,
         proc.returncode,
@@ -54,7 +63,11 @@ def _git(args: list[str], cwd: Path | None = None, token: str | None = None,
          input: str | None = None) -> str:
     proc = _run(args, cwd=cwd, token=token, input=input)
     if proc.returncode != 0:
-        raise GitError(f"git {args[0]} falhou: {proc.stderr.strip()[:500]}")
+        # The message ends up in the DB and in emails: never let the token leak there.
+        stderr = proc.stderr
+        if token:
+            stderr = stderr.replace(_basic_auth(token), "***").replace(token, "***")
+        raise GitError(f"git {args[0]} falhou: {stderr.strip()[:500]}")
     return proc.stdout
 
 

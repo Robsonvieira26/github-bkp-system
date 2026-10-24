@@ -1,7 +1,10 @@
+import base64
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from app import mirror
 from app.mirror import GitError, ensure_mirror, mirror_path, repo_size, sync_mirror
 from tests.gitutil import git, has_ref, rev
 
@@ -128,3 +131,38 @@ def test_incoming_refs_cleaned(remote, mirror_dir):
 def test_repo_size(remote, mirror_dir):
     ensure_mirror(mirror_dir, remote.url, None)
     assert repo_size(mirror_dir) > 0
+
+
+def _fake_run(result=None, exc=None):
+    def fake(args, **kwargs):
+        if exc is not None:
+            raise exc
+        return subprocess.CompletedProcess(args, *result)
+
+    return fake
+
+
+def test_git_timeout_becomes_git_error(monkeypatch, tmp_path):
+    exc = subprocess.TimeoutExpired(["git", "fetch"], 1)
+    monkeypatch.setattr(mirror.subprocess, "run", _fake_run(exc=exc))
+    with pytest.raises(GitError, match="git fetch excedeu o tempo limite"):
+        mirror._git(["fetch"], cwd=tmp_path)
+
+
+def test_git_missing_becomes_git_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(mirror.subprocess, "run", _fake_run(exc=FileNotFoundError("git")))
+    with pytest.raises(GitError, match="git não encontrado"):
+        mirror._git(["fetch"], cwd=tmp_path)
+
+
+def test_git_error_redacts_token(monkeypatch, tmp_path):
+    token = "ghp_secret123"
+    basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    stderr = f"fatal: bad header Authorization: Basic {basic} for {token}".encode()
+    monkeypatch.setattr(mirror.subprocess, "run", _fake_run(result=(128, b"", stderr)))
+    with pytest.raises(GitError) as info:
+        mirror._git(["fetch"], cwd=tmp_path, token=token)
+    message = str(info.value)
+    assert token not in message
+    assert basic not in message
+    assert "***" in message
