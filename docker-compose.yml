@@ -1,0 +1,15 @@
+services:
+  github-bkp:
+    build: .
+    image: github-bkp-system:latest
+    container_name: github-bkp
+    env_file: .env
+    ports:
+      # Web UI has no authentication: keep it on localhost or a LAN/VPN address only.
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - bkp-data:/data
+    restart: unless-stopped
+
+volumes:
+  bkp-data:
