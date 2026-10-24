@@ -253,14 +253,13 @@ def test_api_add_repos(ctx):
         "owner/new",
     ]})
     assert resp.status_code == 201
-    assert resp.json() == {"results": [
-        {"input": "owner/new", "full_name": "owner/new", "status": "added"},
-        {"input": "https://github.com/Owner/Other.git", "full_name": "owner/other",
-         "status": "added"},
-        {"input": "owner/existing", "full_name": "owner/existing", "status": "duplicate"},
-        {"input": "not a repo", "full_name": None, "status": "invalid"},
-        {"input": "owner/new", "full_name": "owner/new", "status": "duplicate"},
-    ]}
+    assert [(r["input"], r["full_name"], r["status"]) for r in resp.json()["results"]] == [
+        ("owner/new", "owner/new", "added"),
+        ("https://github.com/Owner/Other.git", "owner/other", "added"),
+        ("owner/existing", "owner/existing", "duplicate"),
+        ("not a repo", None, "invalid"),
+        ("owner/new", "owner/new", "duplicate"),
+    ]
     assert [r.full_name for r in db.list_repos()] == ["owner/existing", "owner/new", "owner/other"]
 
 
@@ -308,3 +307,133 @@ def test_behind_reverse_proxy_domain(tmp_path):
                        base_url="https://other.robsonv.com")
     assert other.get("/").status_code == 400
     db.close()
+
+
+def _tags_by_name(db):
+    tags = db.repo_tags()
+    return {r.full_name: tags.get(r.id, []) for r in db.list_repos()}
+
+
+def test_add_repo_form_with_tags(ctx):
+    db, _, client = ctx
+    resp = client.post("/repos", data={"full_name": "owner/repo", "tags": "Edição, Estudos"},
+                       follow_redirects=False)
+    assert resp.headers["location"] == "/?msg=added"
+    assert _tags_by_name(db) == {"owner/repo": ["Edição", "Estudos"]}
+
+
+def test_edit_tags_form(ctx):
+    db, _, client = ctx
+    r = db.add_repo("owner/repo")
+    db.add_tags(r.id, ["Old"])
+    resp = client.post(f"/repos/{r.id}/edit", data={"tags": "LLM, Skills"}, follow_redirects=False)
+    assert resp.headers["location"] == "/?msg=saved"
+    assert _tags_by_name(db) == {"owner/repo": ["LLM", "Skills"]}
+    bad = client.post(f"/repos/{r.id}/edit", data={"tags": "x" * 41}, follow_redirects=False)
+    assert bad.headers["location"] == "/?msg=invalid_edit"
+    missing = client.post("/repos/999/edit", data={"tags": "a"}, follow_redirects=False)
+    assert missing.headers["location"] == "/?msg=not_found"
+
+
+def test_index_search_and_tag_filter(ctx):
+    db, _, client = ctx
+    a = db.add_repo("heygen-com/hyperframes")
+    b = db.add_repo("tt-a1i/archify")
+    db.add_tags(a.id, ["Edição"])
+    db.add_tags(b.id, ["Skills"])
+    html = client.get("/").text
+    assert "heygen-com/hyperframes" in html and "tt-a1i/archify" in html
+    assert 'href="/?tag=Edi%C3%A7%C3%A3o"' in html
+    by_tag = client.get("/", params={"tag": "Skills"}).text
+    assert "tt-a1i/archify" in by_tag and "heygen-com/hyperframes" not in by_tag
+    assert "1 de 2 repositórios" in by_tag
+    by_q = client.get("/", params={"q": "hyper"}).text
+    assert "heygen-com/hyperframes" in by_q and "tt-a1i/archify" not in by_q
+    none = client.get("/", params={"q": "zzz"}).text
+    assert "Nenhum repositório corresponde" in none
+
+
+def test_api_add_repos_with_tags_including_existing(ctx):
+    db, _, client = ctx
+    db.add_repo("owner/existing")
+    resp = client.post("/api/repos", json={"repos": ["owner/new", "owner/existing", "bad"],
+                                           "tags": ["Agentes", "Vertex AI"]})
+    assert resp.status_code == 201
+    assert resp.json()["results"] == [
+        {"input": "owner/new", "full_name": "owner/new", "status": "added",
+         "description": None, "tags": ["Agentes", "Vertex AI"]},
+        {"input": "owner/existing", "full_name": "owner/existing", "status": "duplicate",
+         "description": None, "tags": ["Agentes", "Vertex AI"]},
+        {"input": "bad", "full_name": None, "status": "invalid", "description": None,
+         "tags": []},
+    ]
+    assert client.post("/api/repos", json={"repos": ["a/b"], "tags": ["x" * 41]}).status_code == 422
+
+
+def test_api_list_repos(ctx):
+    db, _, client = ctx
+    a = db.add_repo("heygen-com/hyperframes")
+    b = db.add_repo("tt-a1i/archify")
+    db.add_tags(a.id, ["Edição"])
+    db.add_tags(b.id, ["Skills"])
+    body = client.get("/api/repos").json()
+    assert [(r["full_name"], r["tags"], r["status"]) for r in body["repos"]] == [
+        ("heygen-com/hyperframes", ["Edição"], "pending"),
+        ("tt-a1i/archify", ["Skills"], "pending"),
+    ]
+    assert [r["full_name"] for r in client.get("/api/repos?tag=skills").json()["repos"]] == [
+        "tt-a1i/archify"]
+    assert [r["full_name"] for r in client.get("/api/repos?q=hyper").json()["repos"]] == [
+        "heygen-com/hyperframes"]
+
+
+def test_api_patch_repo(ctx):
+    db, _, client = ctx
+    r = db.add_repo("owner/repo")
+    db.add_tags(r.id, ["Old"])
+    resp = client.patch("/api/repos/Owner/Repo", json={"description": "  Edita vídeos  "})
+    assert resp.status_code == 200
+    assert resp.json() == {"full_name": "owner/repo", "description": "Edita vídeos",
+                           "tags": ["Old"]}
+    resp = client.patch("/api/repos/owner/repo", json={"tags": ["New"]})
+    assert resp.json() == {"full_name": "owner/repo", "description": "Edita vídeos",
+                           "tags": ["New"]}
+    resp = client.patch("/api/repos/owner/repo", json={"description": None})
+    assert resp.json()["description"] is None
+    assert client.patch("/api/repos/owner/nope", json={"tags": []}).status_code == 404
+    assert client.patch("/api/repos/owner/repo", json={"tags": ["x" * 41]}).status_code == 422
+    assert client.patch("/api/repos/owner/repo",
+                        json={"description": "x" * 501}).status_code == 422
+
+
+def test_api_add_repo_objects_with_description(ctx):
+    db, _, client = ctx
+    resp = client.post("/api/repos", json={"repos": [
+        {"repo": "owner/a", "description": "Primeiro", "tags": ["LLM"]},
+        "owner/b",
+    ], "tags": ["Estudos"]})
+    assert resp.status_code == 201
+    got = {r["full_name"]: (r["description"], r["tags"]) for r in resp.json()["results"]}
+    assert got == {"owner/a": ("Primeiro", ["Estudos", "LLM"]), "owner/b": (None, ["Estudos"])}
+    listed = client.get("/api/repos?q=primeiro").json()["repos"]
+    assert [r["full_name"] for r in listed] == ["owner/a"]
+
+
+def test_edit_form_description_and_tags(ctx):
+    db, _, client = ctx
+    r = db.add_repo("owner/repo")
+    resp = client.post(f"/repos/{r.id}/edit", data={"description": "Clona apps", "tags": "A, B"},
+                       follow_redirects=False)
+    assert resp.headers["location"] == "/?msg=saved"
+    assert db.get_repo(r.id).description == "Clona apps"
+    assert _tags_by_name(db) == {"owner/repo": ["A", "B"]}
+    html = client.get("/").text
+    assert "Clona apps" in html
+    client.post(f"/repos/{r.id}/edit", data={"description": "", "tags": ""})
+    assert db.get_repo(r.id).description is None
+
+
+def test_add_form_with_description(ctx):
+    db, _, client = ctx
+    client.post("/repos", data={"full_name": "owner/repo", "description": "Algo"})
+    assert db.list_repos()[0].description == "Algo"

@@ -31,7 +31,8 @@ and emails you when a repository disappears from GitHub (or comes back).
    docker compose up -d --build
    ```
 
-5. Open http://127.0.0.1:8808 and add repos as `owner/repo` or a GitHub URL.
+5. Open http://127.0.0.1:8808 and add repos as `owner/repo` or a GitHub URL. Tags and a
+   description help you find them later: search and tag filters are above the list.
 
 ## Updating
 
@@ -45,29 +46,61 @@ all backups: they live in the external `github-bkp-data` volume, which compose n
 
 ## API
 
-Add repositories from a script with `POST /api/repos`. It accepts the same formats as the form
-(`owner/repo`, HTTPS or SSH GitHub URL), 1–100 per request:
+No authentication, like the UI (see Security); requests sent from a browser on another site are
+rejected. Repo names accept the same formats as the form: `owner/repo`, an HTTPS GitHub URL (also
+`/tree/...` or `/blob/...` links inside the repo) or an SSH URL.
+
+### Add repositories — `POST /api/repos`
+
+1–100 repos per request. Each item is a name, or an object with an optional `description` and
+`tags`. Top-level `tags` apply to every item, **including repos already in the list**, so the
+same call also tags existing repos; an item's `description` replaces the current one.
 
 ```bash
 curl -X POST http://127.0.0.1:8808/api/repos \
   -H "Content-Type: application/json" \
-  -d '{"repos": ["octocat/Hello-World", "https://github.com/owner/repo"]}'
+  -d '{"tags": ["Agentes"], "repos": [
+        "octocat/Hello-World",
+        {"repo": "https://github.com/owner/repo", "description": "Why I keep it", "tags": ["Vertex AI"]}
+      ]}'
 ```
 
-The response has one result per input, in order. `status` is `added`, `duplicate` (already in
-the list) or `invalid` (not a GitHub repo name); the HTTP status is `201` when at least one repo
-was added, otherwise `200`. A malformed body returns `422`.
+One result per input, in order. `status` is `added`, `duplicate` (already in the list) or
+`invalid` (not a GitHub repo name, or bad tags). HTTP `201` when at least one repo was added,
+otherwise `200`; a malformed body returns `422`.
 
 ```json
 {"results": [
-  {"input": "octocat/Hello-World", "full_name": "octocat/hello-world", "status": "added"},
-  {"input": "https://github.com/owner/repo", "full_name": "owner/repo", "status": "duplicate"}
+  {"input": "octocat/Hello-World", "full_name": "octocat/hello-world", "status": "added",
+   "description": null, "tags": ["Agentes"]},
+  {"input": "https://github.com/owner/repo", "full_name": "owner/repo", "status": "duplicate",
+   "description": "Why I keep it", "tags": ["Agentes", "Vertex AI"]}
 ]}
 ```
 
+### Update a repo — `PATCH /api/repos/{owner}/{repo}`
+
+Set the description and/or replace the tags of a repo already in the list. Fields left out are
+unchanged; `"description": null` clears it. `404` if the repo isn't in the list.
+
+```bash
+curl -X PATCH http://127.0.0.1:8808/api/repos/owner/repo \
+  -H "Content-Type: application/json" \
+  -d '{"description": "Clone for the video pipeline", "tags": ["Edição", "Estudos"]}'
+```
+
+### List and search — `GET /api/repos?q=&tag=`
+
+`q` matches the name, description or tags (case-insensitive); `tag` filters by one tag.
+
+```bash
+curl "http://127.0.0.1:8808/api/repos?tag=Agentes&q=swarm"
+```
+
+Limits: up to 20 tags per repo, 40 characters per tag, 500 characters of description. Tags are
+matched case-insensitively and keep the spelling first used.
+
 New repos are backed up on the next scheduled run, or right away with "Sincronizar agora".
-Like the UI, the API has no authentication (see Security) and requests sent from a browser on
-another site are rejected.
 
 ## Schedule
 

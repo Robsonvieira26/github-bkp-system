@@ -174,3 +174,19 @@ def strip_summary(cells: list[DayCell]) -> str:
     ok = sum(1 for c in cells if c.tone == "ok")
     bad = sum(1 for c in cells if c.tone in ("warn", "bad"))
     return f"Últimos {len(cells)} dias: {ok} com backup ok, {bad} com problema."
+
+
+def filter_repos(repos: list[Repo], tags: dict[int, list[str]], q: str, tag: str) -> list[Repo]:
+    """Repos with the tag (exact, any case) whose name, description or tags contain q."""
+    needle = q.strip().casefold()
+    wanted = tag.strip().casefold()
+    result = []
+    for repo in repos:
+        repo_tags = [t.casefold() for t in tags.get(repo.id, [])]
+        if wanted and wanted not in repo_tags:
+            continue
+        haystack = [repo.full_name, repo.description or "", *repo_tags]
+        if needle and not any(needle in text.casefold() for text in haystack):
+            continue
+        result.append(repo)
+    return result

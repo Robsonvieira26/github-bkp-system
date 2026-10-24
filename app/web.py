@@ -6,11 +6,11 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.db import Database, DuplicateRepoError, utc_now
-from app.names import parse_repo_name
+from app.names import MAX_TAGS, parse_description, parse_repo_name, parse_tags
 from app.notifier import format_size
 from app.ui import (
     EVENT_LABELS,
@@ -18,6 +18,7 @@ from app.ui import (
     STATUS_LABELS,
     TRIGGER_LABELS,
     by_severity,
+    filter_repos,
     format_when,
     history_strips,
     strip_summary,
@@ -75,8 +76,11 @@ MESSAGES = {
     "invalid": "Nome inválido. Use owner/repo ou a URL do GitHub.",
     "duplicate": "Repositório já está na lista.",
     "not_found": "Repositório não encontrado.",
+    "saved": "Alterações salvas.",
+    "invalid_edit": "Não foi possível salvar: use até 20 tags de até 40 caracteres e uma "
+    "descrição de até 500 caracteres.",
 }
-PROBLEM_MESSAGES = {"invalid", "duplicate", "not_found", "sync_busy"}
+PROBLEM_MESSAGES = {"invalid", "duplicate", "not_found", "sync_busy", "invalid_edit"}
 
 
 class SchedulerLike(Protocol):
@@ -87,8 +91,53 @@ class SchedulerLike(Protocol):
     def next_sync_time(self) -> datetime | None: ...
 
 
+def _tags(value: list[str]) -> list[str]:
+    return parse_tags(value)
+
+
+def _description(value: str | None) -> str | None:
+    return parse_description(value)
+
+
+class RepoItem(BaseModel):
+    repo: str
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list, max_length=MAX_TAGS)
+
+    _check_tags = field_validator("tags")(_tags)
+    _check_description = field_validator("description")(_description)
+
+
 class AddReposRequest(BaseModel):
-    repos: list[str] = Field(min_length=1, max_length=100)
+    repos: list[str | RepoItem] = Field(min_length=1, max_length=100)
+    tags: list[str] = Field(default_factory=list, max_length=MAX_TAGS)
+
+    _check_tags = field_validator("tags")(_tags)
+
+
+class PatchRepoRequest(BaseModel):
+    """Fields left out are unchanged; `"description": null` clears it."""
+
+    description: str | None = None
+    tags: list[str] | None = Field(default=None, max_length=MAX_TAGS)
+
+    _check_description = field_validator("description")(_description)
+
+    @field_validator("tags")
+    @classmethod
+    def _check_tags(cls, value: list[str] | None) -> list[str] | None:
+        return None if value is None else parse_tags(value)
+
+
+def _repo_json(repo, tags: dict[int, list[str]]) -> dict:
+    return {
+        "full_name": repo.full_name,
+        "description": repo.description,
+        "tags": tags.get(repo.id, []),
+        "status": repo.status.value,
+        "last_success_at": repo.last_success_at,
+        "size_bytes": repo.size_bytes,
+    }
 
 
 def _redirect(msg: str) -> RedirectResponse:
@@ -128,8 +177,10 @@ def create_app(
     )
 
     @app.get("/", response_class=HTMLResponse)
-    def index(request: Request, msg: str | None = None):
-        repos = by_severity(db.list_repos())
+    def index(request: Request, msg: str | None = None, q: str = "", tag: str = ""):
+        all_repos = by_severity(db.list_repos())
+        tags = db.repo_tags()
+        repos = filter_repos(all_repos, tags, q, tag)
         since = datetime.now(UTC) - timedelta(days=HISTORY_DAYS + 1)
         strips = history_strips(repos, db.events_since(since.isoformat(timespec="seconds")), tz)
         last = db.last_finished_run()
@@ -138,7 +189,12 @@ def create_app(
             "index.html",
             {
                 "repos": repos,
-                "verdict": verdict(repos),
+                "total": len(all_repos),
+                "tags": tags,
+                "tag_counts": db.tag_counts(),
+                "q": q,
+                "tag": tag,
+                "verdict": verdict(all_repos),
                 "strips": strips,
                 "summaries": {rid: strip_summary(cells) for rid, cells in strips.items()},
                 "last_run": last,
@@ -150,35 +206,94 @@ def create_app(
         )
 
     @app.post("/repos")
-    def add_repo(full_name: Annotated[str, Form()] = ""):
+    def add_repo(
+        full_name: Annotated[str, Form()] = "",
+        description: Annotated[str, Form()] = "",
+        tags: Annotated[str, Form()] = "",
+    ):
         try:
             name = parse_repo_name(full_name)
         except ValueError:
             return _redirect("invalid")
         try:
-            db.add_repo(name)
+            tag_list, text = parse_tags(tags), parse_description(description)
+        except ValueError:
+            return _redirect("invalid_edit")
+        try:
+            repo = db.add_repo(name)
         except DuplicateRepoError:
             return _redirect("duplicate")
+        if text:
+            db.set_description(repo.id, text)
+        db.add_tags(repo.id, tag_list)
         return _redirect("added")
+
+    @app.post("/repos/{repo_id}/edit")
+    def edit_repo(
+        repo_id: int,
+        description: Annotated[str, Form()] = "",
+        tags: Annotated[str, Form()] = "",
+    ):
+        if db.get_repo(repo_id) is None:
+            return _redirect("not_found")
+        try:
+            tag_list, text = parse_tags(tags), parse_description(description)
+        except ValueError:
+            return _redirect("invalid_edit")
+        db.set_description(repo_id, text)
+        db.set_tags(repo_id, tag_list)
+        return _redirect("saved")
+
+    @app.get("/api/repos")
+    def api_list_repos(q: str = "", tag: str = ""):
+        tags = db.repo_tags()
+        repos = filter_repos(db.list_repos(), tags, q, tag)
+        return {"repos": [_repo_json(r, tags) for r in repos]}
 
     @app.post("/api/repos")
     def api_add_repos(body: AddReposRequest):
-        """Add repos in bulk. Same accepted formats as the form; one result per input."""
+        """Add repos in bulk; one result per input. Top-level tags apply to every repo,
+        including ones already in the list, so this also tags existing repos."""
         results = []
-        for text in body.repos:
+        for item in body.repos:
+            entry = item if isinstance(item, RepoItem) else RepoItem(repo=item)
             try:
-                name = parse_repo_name(text)
+                name = parse_repo_name(entry.repo)
+                tag_list = parse_tags([*body.tags, *entry.tags])
             except ValueError:
-                results.append({"input": text, "full_name": None, "status": "invalid"})
+                results.append({"input": entry.repo, "full_name": None, "status": "invalid",
+                                "description": None, "tags": []})
                 continue
             try:
-                db.add_repo(name)
+                repo = db.add_repo(name)
                 status = "added"
             except DuplicateRepoError:
+                repo = db.find_repo(name)
                 status = "duplicate"
-            results.append({"input": text, "full_name": name, "status": status})
+            if entry.description is not None:
+                db.set_description(repo.id, entry.description)
+            db.add_tags(repo.id, tag_list)
+            results.append({"input": entry.repo, "full_name": name, "status": status,
+                            "description": db.get_repo(repo.id).description,
+                            "tags": db.repo_tags().get(repo.id, [])})
         added = any(r["status"] == "added" for r in results)
         return JSONResponse({"results": results}, status_code=201 if added else 200)
+
+    @app.patch("/api/repos/{owner}/{name}")
+    def api_patch_repo(owner: str, name: str, body: PatchRepoRequest):
+        """Set the description and/or replace the tags of a repo already in the list."""
+        try:
+            repo = db.find_repo(parse_repo_name(f"{owner}/{name}"))
+        except ValueError:
+            repo = None
+        if repo is None:
+            return JSONResponse({"detail": "repositório não encontrado"}, status_code=404)
+        if "description" in body.model_fields_set:
+            db.set_description(repo.id, body.description)
+        if body.tags is not None:
+            db.set_tags(repo.id, body.tags)
+        return {"full_name": repo.full_name, "description": db.get_repo(repo.id).description,
+                "tags": db.repo_tags().get(repo.id, [])}
 
     @app.post("/repos/{repo_id}/delete")
     def delete_repo(repo_id: int):
