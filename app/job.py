@@ -62,36 +62,45 @@ class BackupJob:
     def _process(self, repo: Repo, run_id: int) -> bool:
         stamp = self._stamp()
         size = None
+        preserved: list[str] = []
         try:
-            outcome, error, size = self._sync(repo, run_id, stamp)
+            outcome, error, size, preserved = self._sync(repo, stamp)
         except Exception as exc:
             log.exception("unexpected error processing %s", repo.full_name)
             outcome, error = Outcome.ERROR, f"erro inesperado: {exc.__class__.__name__}"
 
         transition = next_state(repo.state, outcome)
-        for kind in transition.events:
-            detail = error if kind in ("error", "backup_failing", "not_found", "missing") else None
-            if kind == "restored":
-                since = self._db.last_event_at(repo.id, "missing")
-                detail = f"marcado como sumido em {since[:10]}" if since else None
-            self._db.add_event(repo.id, run_id, kind, detail, stamp)
-        self._db.save_repo_state(
-            repo.id,
-            transition.state,
-            checked_at=stamp,
-            success=outcome is Outcome.OK,
-            error=error,
-            size_bytes=size,
-        )
+        try:
+            if preserved:
+                self._db.add_event(repo.id, run_id, "refs_preserved", ", ".join(preserved), stamp)
+            for kind in transition.events:
+                detail = (
+                    error if kind in ("error", "backup_failing", "not_found", "missing") else None
+                )
+                if kind == "restored":
+                    since = self._db.last_event_at(repo.id, "missing")
+                    detail = f"marcado como sumido em {since[:10]}" if since else None
+                self._db.add_event(repo.id, run_id, kind, detail, stamp)
+            self._db.save_repo_state(
+                repo.id,
+                transition.state,
+                checked_at=stamp,
+                success=outcome is Outcome.OK,
+                error=error,
+                size_bytes=size,
+            )
+        except Exception:
+            log.exception("failed to persist state for %s", repo.full_name)
+            return False
         log.info("%s: %s -> %s", repo.full_name, outcome.value, transition.state.status.value)
         return outcome is Outcome.OK
 
-    def _sync(self, repo: Repo, run_id: int, stamp: str) -> tuple[Outcome, str | None, int | None]:
+    def _sync(self, repo: Repo, stamp: str) -> tuple[Outcome, str | None, int | None, list[str]]:
         check = self._github.check_repo(repo.full_name)
         if check.result is CheckResult.NOT_FOUND:
-            return Outcome.NOT_FOUND, NOT_FOUND_MSG, None
+            return Outcome.NOT_FOUND, NOT_FOUND_MSG, None, []
         if check.result is CheckResult.ERROR:
-            return Outcome.ERROR, check.detail, None
+            return Outcome.ERROR, check.detail, None, []
 
         path = mirror_path(self._repos_dir, repo.full_name)
         url = f"{self._git_base_url}/{repo.full_name}.git"
@@ -100,10 +109,8 @@ class BackupJob:
             preserved = sync_mirror(path, self._token, stamp[:10])
         except GitError as exc:
             # Includes timeouts and a missing git binary (see app.mirror._run).
-            return Outcome.ERROR, str(exc), None
-        if preserved:
-            self._db.add_event(repo.id, run_id, "refs_preserved", ", ".join(preserved), stamp)
-        return Outcome.OK, None, repo_size(path)
+            return Outcome.ERROR, str(exc), None, []
+        return Outcome.OK, None, repo_size(path), list(preserved)
 
     def flush_emails(self) -> None:
         events = self._db.pending_email_events(EMAIL_EVENTS)

@@ -194,3 +194,21 @@ def test_send_summary(env):
     assert len(env.nt.sent) == 1
     assert env.nt.sent[0].subject.startswith("[github-bkp] Resumo semanal")
     assert "synced: 1" in env.nt.sent[0].text
+
+
+def test_db_error_on_one_repo_does_not_abort_run(env, monkeypatch):
+    bad = env.db.add_repo("owner/bad")
+    good = env.db.add_repo("owner/repo")
+    real_save = env.db.save_repo_state
+
+    def flaky_save(repo_id, *args, **kwargs):
+        if repo_id == bad.id:
+            raise RuntimeError("disk I/O error")
+        return real_save(repo_id, *args, **kwargs)
+
+    monkeypatch.setattr(env.db, "save_repo_state", flaky_save)
+    env.job.run("manual")
+    assert env.db.get_repo(good.id).status is Status.ACTIVE
+    run = env.db.last_run()
+    assert run.finished_at is not None
+    assert (run.ok_count, run.fail_count) == (1, 1)
