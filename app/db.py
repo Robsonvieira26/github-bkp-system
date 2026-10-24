@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS runs (
   finished_at TEXT,
   trigger     TEXT NOT NULL,
   ok_count    INTEGER NOT NULL DEFAULT 0,
-  fail_count  INTEGER NOT NULL DEFAULT 0
+  fail_count  INTEGER NOT NULL DEFAULT 0,
+  aborted     INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS events (
   id         INTEGER PRIMARY KEY,
@@ -99,10 +100,13 @@ class Run:
     trigger: str
     ok_count: int
     fail_count: int
+    aborted: bool = False
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Run":
-        return cls(**{k: row[k] for k in row.keys()})
+        data = {k: row[k] for k in row.keys()}
+        data["aborted"] = bool(data["aborted"])
+        return cls(**data)
 
 
 @dataclass(frozen=True)
@@ -137,6 +141,10 @@ class Database:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA busy_timeout=5000")
             self._conn.executescript(SCHEMA)
+            columns = {r["name"] for r in self._conn.execute("PRAGMA table_info(runs)")}
+            if "aborted" not in columns:
+                self._conn.execute("ALTER TABLE runs ADD COLUMN aborted INTEGER NOT NULL DEFAULT 0")
+                self._conn.commit()
 
     def close(self) -> None:
         with self._lock:
@@ -230,6 +238,13 @@ class Database:
             (now, ok, fail, run_id),
         )
 
+    def close_unfinished_runs(self, now: str) -> int:
+        """Mark runs left open by a shutdown mid-run as finished and aborted."""
+        cur = self._write(
+            "UPDATE runs SET finished_at = ?, aborted = 1 WHERE finished_at IS NULL", (now,)
+        )
+        return cur.rowcount
+
     def recent_runs(self, limit: int = 50) -> list[Run]:
         rows = self._query("SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,))
         return [Run.from_row(r) for r in rows]
@@ -237,6 +252,12 @@ class Database:
     def last_run(self) -> Run | None:
         runs = self.recent_runs(1)
         return runs[0] if runs else None
+
+    def last_finished_run(self) -> Run | None:
+        rows = self._query(
+            "SELECT * FROM runs WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1"
+        )
+        return Run.from_row(rows[0]) if rows else None
 
     # events
 

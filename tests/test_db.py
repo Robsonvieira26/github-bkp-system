@@ -99,3 +99,46 @@ def test_events_and_email_queue(db):
 def test_connection_uses_wal_and_busy_timeout(db):
     assert db._query("PRAGMA journal_mode")[0][0] == "wal"
     assert db._query("PRAGMA busy_timeout")[0][0] == 5000
+
+
+def test_close_unfinished_runs(db):
+    done = db.start_run("schedule", T1)
+    db.finish_run(done, 1, 0, T2)
+    open_run = db.start_run("manual", T2)
+    assert db.close_unfinished_runs(T3) == 1
+    runs = {r.id: r for r in db.recent_runs()}
+    assert runs[open_run].finished_at == T3 and runs[open_run].aborted is True
+    assert runs[done].finished_at == T2 and runs[done].aborted is False
+    assert db.close_unfinished_runs(T3) == 0
+
+
+def test_last_finished_run_skips_open(db):
+    assert db.last_finished_run() is None
+    first = db.start_run("schedule", T1)
+    db.finish_run(first, 0, 0, T2)
+    db.start_run("manual", T3)
+    assert db.last_finished_run().id == first
+    assert db.last_run().finished_at is None
+
+
+def test_migrates_old_runs_table(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE runs (id INTEGER PRIMARY KEY, started_at TEXT NOT NULL, finished_at TEXT,"
+        " trigger TEXT NOT NULL, ok_count INTEGER NOT NULL DEFAULT 0,"
+        " fail_count INTEGER NOT NULL DEFAULT 0)"
+    )
+    conn.execute("INSERT INTO runs (started_at, trigger) VALUES (?, 'manual')", (T1,))
+    conn.commit()
+    conn.close()
+    d = Database(path)
+    try:
+        assert d.recent_runs()[0].aborted is False
+        assert d.close_unfinished_runs(T2) == 1
+        assert d.recent_runs()[0].aborted is True
+    finally:
+        d.close()
+    Database(path).close()  # reopening an already migrated db is fine

@@ -8,7 +8,7 @@
     <tr>
       <td>{{ run.id }}</td>
       <td>{{ run.started_at }}</td>
-      <td>{{ run.finished_at or "em execução" }}</td>
+      <td>{% if run.aborted %}interrompida{% else %}{{ run.finished_at or "em execução" }}{% endif %}</td>
       <td>{{ run.trigger }}</td>
       <td>{{ run.ok_count }}</td>
       <td>{{ run.fail_count }}</td>
