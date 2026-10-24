@@ -6,8 +6,9 @@ services:
     env_file: .env
     init: true
     ports:
-      # Web UI has no authentication: keep it on localhost or a LAN/VPN address only.
-      - "127.0.0.1:8808:8080"
+      # BIND_ADDR / HOST_PORT come from .env. The web UI has no authentication: use 127.0.0.1,
+      # a LAN/VPN address, or 0.0.0.0 only on a network you trust (never the open internet).
+      - "${BIND_ADDR:-127.0.0.1}:${HOST_PORT:-8808}:8080"
     volumes:
       - bkp-data:/data
     restart: unless-stopped
