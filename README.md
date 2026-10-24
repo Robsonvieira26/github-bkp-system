@@ -16,8 +16,12 @@ and emails you when a repository disappears from GitHub (or comes back).
 
 ## Setup
 
-1. Create a fine-grained GitHub token with **Contents: Read-only** and **Metadata: Read-only**
-   for the repos you want to back up.
+1. Create a fine-grained GitHub token at <https://github.com/settings/personal-access-tokens/new>:
+   - Repository access: **Public repositories** to back up anyone's public repos, or
+     **All repositories** / **Only select repositories** to include your private ones.
+   - Permissions (for private repos): **Contents: Read-only** (Metadata: Read-only is added
+     automatically).
+   - Put it in `.env` as `GITHUB_TOKEN`.
 2. `cp .env.example .env` and fill in the values.
 3. Create the data volume (once per server; see [Data](#data)):
 
@@ -180,6 +184,15 @@ docker run --rm --user 0 --entrypoint sh \
   -v github-bkp-system_bkp-data:/from:ro -v github-bkp-data:/to \
   github-bkp-system:latest -c 'cp -a /from/. /to/'
 docker compose up -d --build
+```
+
+The container runs as UID 1000, so the volume must be owned by it. If every backup fails with
+a permission error (or the service refuses to start with `sem permissão para gravar em
+/data/repos`), the volume was created or filled by a root-owned container; fix the owner once:
+
+```bash
+docker run --rm --user 0 -v github-bkp-data:/data --entrypoint chown github-bkp-system:latest -R 1000:1000 /data
+docker compose restart
 ```
 
 If you use a bind mount instead of the volume, make the host directory writable by UID 1000.

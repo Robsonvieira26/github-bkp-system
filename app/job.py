@@ -67,7 +67,8 @@ class BackupJob:
             outcome, error, size, preserved = self._sync(repo, stamp)
         except Exception as exc:
             log.exception("unexpected error processing %s", repo.full_name)
-            outcome, error = Outcome.ERROR, f"erro inesperado: {exc.__class__.__name__}"
+            error = f"erro inesperado: {exc.__class__.__name__}: {exc}"[:500]
+            outcome = Outcome.ERROR
 
         transition = next_state(repo.state, outcome)
         try:
