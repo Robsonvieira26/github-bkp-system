@@ -198,3 +198,38 @@ def test_ensure_mirror_removes_stale_temp_dir(remote, mirror_dir):
     assert ensure_mirror(mirror_dir, remote.url, None) is True
     assert not stale.exists()
     assert rev(mirror_dir, "refs/heads/main") == rev(remote.work, "HEAD")
+
+
+def test_sync_preserves_deleted_tag(remote, mirror_dir):
+    git("tag", "v1", cwd=remote.work)
+    remote.push("v1")
+    old = rev(remote.work, "v1")
+    ensure_mirror(mirror_dir, remote.url, None)
+
+    remote.push("--delete", "v1")
+    preserved = sync_mirror(mirror_dir, None, TODAY)
+
+    assert preserved == ["refs/tags/v1"]
+    assert not has_ref(mirror_dir, "refs/tags/v1")
+    assert rev(mirror_dir, f"refs/backup/{TODAY}/tags/v1") == old
+
+
+def test_sync_applies_staged_refs_not_a_second_fetch(remote, mirror_dir, monkeypatch):
+    ensure_mirror(mirror_dir, remote.url, None)
+    staged = remote.commit("staged")
+    remote.push("main")
+
+    real_preserve = mirror._preserve_vanishing_refs
+
+    def preserve_then_force_push(path, today):
+        result = real_preserve(path, today)
+        # A force-push landing between staging and applying must not reach refs/heads
+        # uncompared: the staged tip would be lost without a backup.
+        git("reset", "--hard", "HEAD~1", cwd=remote.work)
+        remote.commit("raced")
+        remote.push("--force", "main")
+        return result
+
+    monkeypatch.setattr(mirror, "_preserve_vanishing_refs", preserve_then_force_push)
+    assert sync_mirror(mirror_dir, None, TODAY) == []
+    assert rev(mirror_dir, "refs/heads/main") == staged

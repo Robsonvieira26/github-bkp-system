@@ -9,6 +9,7 @@ GIT_TIMEOUT_SECONDS = 30 * 60
 INCOMING = "refs/incoming/"
 FETCH_REFSPECS = ("+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")
 STAGING_REFSPECS = ("+refs/heads/*:refs/incoming/heads/*", "+refs/tags/*:refs/incoming/tags/*")
+APPLY_REFSPECS = ("+refs/incoming/heads/*:refs/heads/*", "+refs/incoming/tags/*:refs/tags/*")
 
 
 class GitError(Exception):
@@ -169,7 +170,11 @@ def sync_mirror(path: Path, token: str | None, today: str) -> list[str]:
     )
     try:
         preserved = _preserve_vanishing_refs(path, today)
-        _git(["fetch", "--prune", "origin"], cwd=path, token=token)
+        # Apply exactly what was staged and compared, from the repo itself: a second
+        # network fetch could pick up a force-push that happened after the comparison
+        # and overwrite a tip that was never backed up. --prune drops local heads/tags
+        # missing from refs/incoming; refs/backup/* is outside these refspecs.
+        _git(["fetch", "--prune", "--no-tags", ".", *APPLY_REFSPECS], cwd=path)
     finally:
         _delete_refs(path, INCOMING)
     return preserved
