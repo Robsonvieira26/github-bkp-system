@@ -92,9 +92,28 @@ ALLOWED_HOSTS=127.0.0.1,localhost,192.168.0.10,marte   # the IP / hostname you t
 ```
 
 `BIND_ADDR` alone isn't enough: a request whose host isn't in `ALLOWED_HOSTS` gets
-`400 Invalid host header`. Behind a reverse proxy (e.g. Nginx Proxy Manager) add the proxy's
-domain to `ALLOWED_HOSTS` instead, and keep `BIND_ADDR=127.0.0.1` if the proxy runs on the same
-host network. `HOST_PORT` (default `8808`) changes the published port.
+`400 Invalid host header`. `HOST_PORT` (default `8808`) changes the published port.
+
+### Behind Nginx Proxy Manager (or another reverse proxy)
+
+Example for `https://git-bkp.local.robsonv.com`:
+
+1. `.env` — publish the port where the proxy can reach it and allow the domain:
+
+   ```dotenv
+   BIND_ADDR=0.0.0.0     # or the server's LAN IP; a proxy running in Docker can't reach the host's 127.0.0.1
+   ALLOWED_HOSTS=127.0.0.1,localhost,git-bkp.local.robsonv.com
+   ```
+
+   Then `docker compose up -d`.
+2. In Nginx Proxy Manager, add a Proxy Host:
+   - Domain: `git-bkp.local.robsonv.com`
+   - Scheme `http`, Forward Hostname/IP: the server's LAN IP, Forward Port: `8808`
+   - SSL tab: your certificate for the domain, "Force SSL" on.
+
+The proxy must forward the original `Host` header (Nginx Proxy Manager does by default). The app
+compares the browser's `Origin` with that host to block cross-site form posts, so a proxy that
+rewrites `Host` to the upstream address makes every add/remove/sync return `403`.
 
 Two guards protect the UI from browser-based attacks: state-changing requests carrying a
 cross-site `Origin` / `Sec-Fetch-Site` header are rejected (403), and only the hostnames in

@@ -287,3 +287,24 @@ def test_api_add_repos_blocked_cross_site(ctx):
                        headers={"Origin": "http://evil.example"})
     assert resp.status_code == 403
     assert db.list_repos() == []
+
+
+def test_behind_reverse_proxy_domain(tmp_path):
+    # Nginx Proxy Manager forwards the original Host; the browser sends a matching https Origin.
+    db = Database(tmp_path / "state.db")
+    domain = "git-bkp.local.robsonv.com"
+    client = TestClient(create_app(db, FakeScheduler(), allowed_hosts=["127.0.0.1", domain]),
+                        base_url=f"https://{domain}")
+    assert client.get("/").status_code == 200
+    resp = client.post("/repos", data={"full_name": "owner/repo"},
+                       headers={"Origin": f"https://{domain}", "Sec-Fetch-Site": "same-origin"},
+                       follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/?msg=added"
+    api = client.post("/api/repos", json={"repos": ["owner/other"]},
+                      headers={"Origin": f"https://{domain}"})
+    assert api.status_code == 201
+    other = TestClient(create_app(db, FakeScheduler(), allowed_hosts=["127.0.0.1", domain]),
+                       base_url="https://other.robsonv.com")
+    assert other.get("/").status_code == 400
+    db.close()
