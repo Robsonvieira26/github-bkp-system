@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     data_dir: Path = Path("/data")
     github_api_url: str = "https://api.github.com"
     github_git_url: str = "https://github.com"
+
+    @field_validator("mail_to")
+    @classmethod
+    def _require_recipient(cls, value: str) -> str:
+        if not any(addr.strip() for addr in value.split(",")):
+            raise ValueError("MAIL_TO precisa de pelo menos um destinatário")
+        return value
 
     @property
     def mail_to_list(self) -> list[str]:

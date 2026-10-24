@@ -52,3 +52,8 @@ def test_secrets_not_in_repr(make_settings):
     s = make_settings()
     assert "test-token" not in repr(s)
     assert "pass" not in repr(s.smtp_password)
+
+
+def test_empty_mail_to_rejected(make_settings):
+    with pytest.raises(ValidationError):
+        make_settings(mail_to=" , ")
